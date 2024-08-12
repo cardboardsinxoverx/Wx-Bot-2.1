@@ -28,10 +28,15 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from PIL import Image
 import numpy as np
 import geocoder
-import subprocess  # Add this line at the beginning
-# ... (your existing imports and code)
-
 import json
+# Load Configuration
+import config
+
+
+def save_cache(cache_type, data):
+    with open(f"{cache_type}_cache.json", "w") as f:
+        json.dump(data, f, indent=2)
+
 
 def load_cache(cache_name):
     try:
@@ -40,30 +45,6 @@ def load_cache(cache_name):
     except FileNotFoundError:
         return {}  # Return an empty dictionary if the cache file doesn't exist
 
-
-try:
-    subprocess.run(["python", "main_bot_script.py"], check=True)
-except subprocess.CalledProcessError as e:
-    print(f"Error running script: {e.output}")
-
-# Load Configuration
-import config
-
-# Configure logging
-logging.basicConfig(
-    filename="weather_bot.log",
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
-# Initialize the bot
-intents = discord.Intents.default()
-intents.message_content = True
-bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
-
-@bot.event
-async def on_ready():
-    print(f'We have logged in as {bot.user}') # idk i hope this works
 
 # Data Storage (Caching)
 metar_cache = {}
@@ -75,48 +56,42 @@ metar_cache = load_cache("metar")  # keep getting and error with this line somet
 taf_cache = load_cache("taf") # guess maybe this one too
 alert_cache = load_cache("alert") # this is gay
 
-# Helper Functions for Caching (load_cache, save_cache)
-def load_cache(cache_type):
-    try:
-        with open(f"{cache_type}_cache.json", "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
+# Initialize the bot
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 
-def save_cache(cache_type, data):
-    with open(f"{cache_type}_cache.json", "w") as f:
-        json.dump(data, f, indent=2)
+
+@bot.event
+async def on_ready():
+    print(f'We have logged in as {bot.user}') # idk i hope this works
+    # channel = client.get_channel(459016306960760834)
+	# await channel.send(random.choice([
+    #     "What's up bitches! I'm back!",
+    #     "Hello again",
+    #     "pls",
+    #     "Let me guess, you want a METAR for kmge?",
+    #     "We don't call 911",
+    #     "Welcome to The Thunderdome!",
+    #     "#hillarysemails"
+    #     ]))
+
 
 # --- on_message Event Handler ---
 @bot.event
 async def on_message(message):
     if message.author == bot.user:  # Don't respond to self
         return
-
-
     await bot.process_commands(message)  # Process bot commands
 
-# Helper Functions for Caching (load_cache, save_cache)
-def load_cache(cache_type):
-    try:
-        with open(f"{cache_type}_cache.json", "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
 
-def save_cache(cache_type, data):
-    with open(f"{cache_type}_cache.json", "w") as f:
-        json.dump(data, f, indent=2)
+def get_metar(icao, hoursback=0, format='json'):
+    metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
+    src = requests.get(metar_url).content
+    json_data = json.loads(src)
+    print(json_data[0]['rawOb'])
+    return json_data[0]['rawOb']
 
-# Data Storage (Caching)
-metar_cache = {}
-taf_cache = {}
-alert_cache = {}
-
-# Load Cache Data on Startup
-metar_cache = load_cache("metar")
-taf_cache = load_cache("taf")
-alert_cache = load_cache("alert")
 
 # --- METAR Command ---
 @bot.command(aliases=["wx"])
@@ -127,30 +102,33 @@ async def metar(ctx, airport_code: str, hours_ago: int = config.DEFAULT_HOURS_BE
             raise ValueError("Invalid hours ago. Please enter a non-negative number.")
 
         # --- 1. Construct URL ---
-        url = f"{config.AVIATION_WEATHER_URL}?dataSource=metars&requestType=retrieve&format=xml&stationString={airport_code.upper()}&hoursBeforeNow={hours_ago}"  # Uppercase for consistency
+        # url = f"{config.AVIATION_WEATHER_URL}?dataSource=metars&requestType=retrieve&format=xml&stationString={airport_code.upper()}&hoursBeforeNow={hours_ago}"  # Uppercase for consistency
 
-        # --- 2. Fetch Data ---
-        response = requests.get(url)
-        response.raise_for_status()  # Raise an exception if the request fails
+        # # --- 2. Fetch Data ---
+        # response = requests.get(url)
+        # response.raise_for_status()  # Raise an exception if the request fails
 
-        # --- 3. Parse METAR ---
-        soup = BeautifulSoup(response.content, 'xml')
-        metar_data = soup.find('raw_text').text
+        # # --- 3. Parse METAR ---
+        # soup = BeautifulSoup(response.content, 'xml')
+        # metar_data = soup.find('raw_text').text
 
+        metar_data = get_metar(airport_code, hours_ago)
         if not metar_data:
-            raise ValueError("METAR data not found.")
+            raise ValueError(f"METAR data not found for {airport_code}.")
 
         # --- 4. Extract Time (for Historical METARs) ---
         if hours_ago > 0:
-            metar_time = soup.find('observation_time').text
+            # metar_time = soup.find('observation_time').text
+            metar_time = metar_data.split(' ')[1]
+            message = f"METAR for {airport_code} ({metar_time}): {metar_data}"
+
         else:
             metar_time = None  # Current METAR doesn't need time in output
+            message = f"METAR for {airport_code}: {metar_data}"
 
         # --- 5. Prepare and Send Response ---
-        if metar_time:
-            message = f"METAR for {airport_code} ({metar_time}Z): {metar_data}"
-        else:
-            message = f"METAR for {airport_code}: {metar_data}"
+        # if metar_time:
+        # else:
 
         # Optionally, use discord.Embed for better formatting
         embed = discord.Embed(title=f"METAR for {airport_code}", description=metar_data)
@@ -177,7 +155,7 @@ async def metar(ctx, airport_code: str, hours_ago: int = config.DEFAULT_HOURS_BE
 
 # --- TAF Command ---
 @bot.command()
-async def skewt(ctx, sounding_type: str, *args):
+async def taf(ctx, airport_code: str, *args):
     """Fetches TAF for the specified airport code."""
     try:
         # --- 1. Input Handling and Caching ---
@@ -473,14 +451,15 @@ async def astro(ctx, location: str = None):
         await ctx.send(f"Error retrieving astronomy information: {e}")
         logging.error(f"Error retrieving astronomy information for {location}: {e}")
 
+
 # --- Radar Command ---
 @bot.command()
 async def radar(ctx, location: str = None):
     """Fetches radar imagery from NWS for a specified location or the user's location (if set). so this is sorta like pulling a metar. you'd just type $radar ffc or the last three letters of the radar code. remember they aren't always the same as the airport, I'm just lucky I don't need to remember two codes."""
     try:
+        geolocator = Nominatim(user_agent="weather-bot")
         if location:
             # Geocode provided location
-            geolocator = Nominatim(user_agent="weather-bot")
             loc = geolocator.geocode(location)
             if not loc:
                 raise ValueError("Location not found.")
@@ -535,9 +514,11 @@ async def radar(ctx, location: str = None):
         await ctx.send(file=discord.File(buffer, f"radar_{location}.png"))
         logging.info(f"User {ctx.author} requested radar for {location}")
 
-    except (requests.exceptions.RequestException, AttributeError, ValueError, geocoder.GeocoderTimedOut) as e:
+    # except (requests.exceptions.RequestException, AttributeError, ValueError, geocoder.GeocoderTimedOut) as e:
+    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing radar imagery for {location}: {e}")
         logging.error(f"Error retrieving/parsing radar imagery for {location}: {e}")
+
 
 # --- overlay that wont work ---
 def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png", zoom=0.1):
@@ -611,6 +592,7 @@ async def alerts(ctx, location: str = None):
     # 4. Format alerts into a user-friendly message (embed is recommended)
     # 5. Send the message to the channel
 
+
 @bot.command()
 async def model(ctx, model_name: str, parameter: str, location: str):
     """Fetches and displays model forecast data for the specified parameter and location."""
@@ -678,3 +660,13 @@ async def webcam(ctx, location: str):
 # trying to expand this still, we need more maps. ohh. probably won't do it. i might to the uhh unit conversion too. i know what to do to get the RAP mesoscale section to work, I just wanna go ahead and see if the both works and worry about this later
 
 # i did have a help section that belongs here but it was giving me problems so i deleted it, not that important
+
+if __name__ == '__main__':
+    # Configure logging
+    logging.basicConfig(
+        filename="weather_bot.log",
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
+    bot.run(config.DISCORD_TOKEN)
