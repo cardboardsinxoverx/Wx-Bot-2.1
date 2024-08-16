@@ -33,6 +33,7 @@ import json
 # Load Configuration
 import config
 import signal
+from math import radians, cos, sin, asin, sqrt, tan, csc, sec, cot
 
 
 def save_cache(cache_type, data):
@@ -87,12 +88,12 @@ async def on_message(message):
     await bot.process_commands(message)  # Process bot commands
 
 
-def get_metar(icao, hoursback=0, format='json'):
-    metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
-    src = requests.get(metar_url).content
-    json_data = json.loads(src)
-    print(json_data[0]['rawOb'])
-    return json_data[0]['rawOb']
+#def get_metar(icao, hoursback=0, format='json'):
+  #  metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
+ #   src = requests.get(metar_url).content
+  #  json_data = json.loads(src)
+  #  print(json_data[0]['rawOb'])
+ #   return json_data[0]['rawOb'] # what the hell is this, i didn't write this
 
 # --- Restart Command ---
 @bot.command()
@@ -116,122 +117,130 @@ async def metar(ctx, airport_code: str, hours_ago: int = config.DEFAULT_HOURS_BE
         if hours_ago < 0:
             raise ValueError("Invalid hours ago. Please enter a non-negative number.")
 
-        # --- 1. Construct URL ---
-        # url = f"{config.AVIATION_WEATHER_URL}?dataSource=metars&requestType=retrieve&format=xml&stationString={airport_code.upper()}&hoursBeforeNow={hours_ago}"  # Uppercase for consistency
+        airport_code = airport_code.upper()
 
-        # # --- 2. Fetch Data ---
-        # response = requests.get(url)
-        # response.raise_for_status()  # Raise an exception if the request fails
+        # Check for cached METARs first (only if hours_ago is within cache range)
+        if 0 <= hours_ago <= config.MAX_HOURS_METAR_CACHE:
+            cached_metars = [
+                entry for entry in metar_cache.get(airport_code, [])
+                if (datetime.datetime.utcnow() - datetime.datetime.fromisoformat(entry['time'])).total_seconds() / 3600 <= hours_ago
+            ]
+            if cached_metars:
+                for metar in cached_metars:
+                    embed = discord.Embed(title=f"METAR for {airport_code}", description=metar['data'])
+                    embed.set_footer(text=f"Observation Time: {metar['time']}Z")
+                    await ctx.send(embed=embed)
+                logging.info(f"User {ctx.author} requested METAR for {airport_code} (hours ago: {hours_ago}, cached)")
+                return  # If found in cache, no need to fetch from API
 
-        # # --- 3. Parse METAR ---
-        # soup = BeautifulSoup(response.content, 'xml')
-        # metar_data = soup.find('raw_text').text
+        # If not in cache or requesting beyond cache range, fetch from API
+        max_hours_to_fetch = min(hours_ago, config.MAX_HOURS_METAR_API_REQUEST)  # Limit API request to avoid overloading
+        url = f"{config.AVIATION_WEATHER_URL}?dataSource=metars&requestType=retrieve&format=xml&stationString={airport_code}&hoursBeforeNow={max_hours_to_fetch}"
 
-        metar_data = get_metar(airport_code, hours_ago)
-        if not metar_data:
-            raise ValueError(f"METAR data not found for {airport_code}.")
+        response = requests.get(url)
+        response.raise_for_status()
 
-        # --- 4. Extract Time (for Historical METARs) ---
-        if hours_ago > 0:
-            # metar_time = soup.find('observation_time').text
-            metar_time = metar_data.split(' ')[1]
-            message = f"METAR for {airport_code} ({metar_time}): {metar_data}"
+        soup = BeautifulSoup(response.content, 'xml')
+        metar_elements = soup.find_all('METAR')  # Find all METAR elements
 
-        else:
-            metar_time = None  # Current METAR doesn't need time in output
-            message = f"METAR for {airport_code}: {metar_data}"
+        if not metar_elements:
+            raise ValueError("METAR data not found.")
 
-        # --- 5. Prepare and Send Response ---
-        # if metar_time:
-        # else:
+        for metar_element in metar_elements:
+            metar_data = metar_element.find('raw_text').text
+            metar_time = metar_element.find('observation_time').text
 
-        # Optionally, use discord.Embed for better formatting
-        embed = discord.Embed(title=f"METAR for {airport_code}", description=metar_data)
-        if metar_time:
+            # Prepare and send response
+            embed = discord.Embed(title=f"METAR for {airport_code}", description=metar_data)
             embed.set_footer(text=f"Observation Time: {metar_time}Z")
-        await ctx.send(embed=embed)
+            await ctx.send(embed=embed)
 
-        # --- 6. Update Cache ---
-        if hours_ago == 0: # Only cache current METARs
-            if airport_code not in metar_cache:
-                metar_cache[airport_code] = []
-            metar_cache[airport_code].append({
-                "time": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "data": metar_data
-            })
-            save_cache("metar", metar_cache)
+            # Update cache (only for current METARs)
+            if max_hours_to_fetch == 0:
+                if airport_code not in metar_cache:
+                    metar_cache[airport_code] = []
+                metar_cache[airport_code].append({
+                    "time": metar_time,
+                    "data": metar_data
+                })
+                save_cache("metar", metar_cache)
 
         logging.info(f"User {ctx.author} requested METAR for {airport_code} (hours ago: {hours_ago})")
 
-    # --- 7. Error Handling ---
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing METAR for {airport_code}: {e}")
         logging.error(f"Error retrieving/parsing METAR for {airport_code}: {e}")
 
 # --- TAF Command ---
 @bot.command()
-async def taf(ctx, airport_code: str, *args):
+async def taf(ctx, airport_code: str):
     """Fetches TAF for the specified airport code."""
     try:
-        # --- 1. Input Handling and Caching ---
+        # 1. Input Handling and Caching
         airport_code = airport_code.upper()
 
-        # Check for cached TAF
-        if airport_code in taf_cache:
-            for entry in taf_cache[airport_code]:
-                if entry['time'] == (datetime.datetime.utcnow() - datetime.timedelta(hours=config.DEFAULT_HOURS_BEFORE_NOW_TAF)).strftime("%Y-%m-%dT%H:%M:%SZ"):
-                    logging.info(f"User {ctx.author} requested TAF for {airport_code} (cached)")
-                    await ctx.send(f"TAF for {airport_code} (cached): {entry['data']}")
-                    return
+        # Check for cached TAF (only if within cache range)
+        if 0 <= config.DEFAULT_HOURS_BEFORE_NOW_TAF <= config.MAX_HOURS_TAF_CACHE:
+            cached_tafs = [
+                entry for entry in taf_cache.get(airport_code, [])
+                if (datetime.datetime.utcnow() - datetime.datetime.fromisoformat(entry['time'])).total_seconds() / 3600 <= config.DEFAULT_HOURS_BEFORE_NOW_TAF
+            ]
+            if cached_tafs:
+                for taf in cached_tafs:
+                    embed = discord.Embed(title=f"TAF for {airport_code}", description=taf['data'])
+                    embed.set_footer(text=f"Issue Time: {taf['time']}Z")
+                    await ctx.send(embed=embed)
+                logging.info(f"User {ctx.author} requested TAF for {airport_code} (cached)")
+                return 
 
-        # --- 2. Construct URL ---
+        # 2. Construct URL
         url = f"{config.AVIATION_WEATHER_URL}?dataSource=tafs&requestType=retrieve&format=xml&stationString={airport_code}&hoursBeforeNow={config.DEFAULT_HOURS_BEFORE_NOW_TAF}"
 
-        # --- 3. Fetch Data ---
+        # 3. Fetch Data
         response = requests.get(url)
-        response.raise_for_status()
+        response.raise_for_status()  # Raise an exception for HTTP errors
 
-        # --- 4. Parse TAF ---
+        # 4. Parse TAF
         soup = BeautifulSoup(response.content, 'xml')
+
+        # Check if any TAF data was found at all
+        if not soup.find('data'):
+            raise ValueError(f"No TAF data found for {airport_code}.")
+
+        # Extract the latest TAF (assuming the first one is the most recent)
         taf_data = soup.find('raw_text').text
+        taf_time = soup.find('issue_time').text
 
-        if not taf_data:
-            raise ValueError("TAF data not found.")
+        if not taf_data or not taf_time:
+            raise ValueError("TAF data or issue time not found.")
 
-        # --- 5. Extract Time (for Historical TAFs) ---
-        if config.DEFAULT_HOURS_BEFORE_NOW_TAF > 0:
-            taf_time = soup.find('issue_time').text
-        else:
-            taf_time = None  # Current TAF doesn't need time in output
-
-        # --- 6. Prepare and Send Response ---
-        if taf_time:
-            message = f"TAF for {airport_code} ({taf_time}Z): {taf_data}"
-        else:
-            message = f"TAF for {airport_code}: {taf_data}"
-
-        # Optionally, use discord.Embed for better formatting
+        # 5. Prepare and Send Response
         embed = discord.Embed(title=f"TAF for {airport_code}", description=taf_data)
-        if taf_time:
-            embed.set_footer(text=f"Issue Time: {taf_time}Z")
+        embed.set_footer(text=f"Issue Time: {taf_time}Z")
         await ctx.send(embed=embed)
 
-        # --- 7. Update Cache (only for current TAFs) ---
+        # 6. Update Cache (only for current TAFs)
         if config.DEFAULT_HOURS_BEFORE_NOW_TAF == 0:
             if airport_code not in taf_cache:
                 taf_cache[airport_code] = []
             taf_cache[airport_code].append({
-                "time": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "time": taf_time,  # Use the extracted taf_time
                 "data": taf_data
             })
             save_cache("taf", taf_cache)
 
         logging.info(f"User {ctx.author} requested TAF for {airport_code}")
 
-    # --- 8. Error Handling ---
-    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
-        await ctx.send(f"Error retrieving/parsing TAF for {airport_code}: {e}")
-        logging.error(f"Error retrieving/parsing TAF for {airport_code}: {e}")
+    # 7. Error Handling 
+    except requests.exceptions.RequestException as e:
+        await ctx.send(f"Error fetching TAF data for {airport_code}: {e}")
+        logging.error(f"Error fetching TAF data for {airport_code}: {e}")
+    except AttributeError as e:
+        await ctx.send(f"Error parsing TAF data for {airport_code}: {e}")
+        logging.error(f"Error parsing TAF data for {airport_code}: {e}")
+    except ValueError as e:
+        await ctx.send(e)  # Display the specific ValueError message to the user
+        logging.error(f"ValueError in TAF command for {airport_code}: {e}")
 
 # --- Skew-T Command ---
 @bot.command()
@@ -271,116 +280,66 @@ async def skewt(ctx, station_code: str):
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
 
+
 # --- Satellite Command ---
 @bot.command()
-async def sat(ctx, region: str = config.DEFAULT_REGION, product_code: int = config.DEFAULT_SATELLITE_PRODUCT):
-    """Fetches satellite image for the specified region and product code.
-
-    Regions:
-      - conus (default)
-      - fulldisk
-      - mesosector1
-      - mesosector2
-      - tropicalatlantic
-      - tropicalpacific
-
-    Product Codes (CONUS, Tropical Atlantic, Tropical Pacific):
-      - 1: GeoColor (True Color)
-      - 2: Red Visible
-      - 14: Clean Longwave Infrared Window
-      - 9: Mid-level Water Vapor
-
-    Product Codes (Full Disk, Mesosectors):
-      - 1: GeoColor (True Color)
-      - 2: Red Visible
-      - 13: Clean Longwave Infrared Window
-    """
+async def sat(ctx, region: str, product_code: int):
+    """Fetches satellite image for the specified region and product code using pre-defined links."""
 
     try:
         region = region.lower()
-        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "tropicalpacific"]
+        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne"] 
 
         if region not in valid_regions:
             raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
 
-        # Product codes for different regions
+        # Product codes for different regions (updated with new regions and product codes)
         product_codes = {
-            "conus": {
-                1: "GeoColor (True Color)",
-                2: "Band 2 - Red Visible",
-                14: "Band 14 - Clean Longwave Infrared Window",
-                9: "Band 9 - Mid-level Water Vapor",
-            },
-            "fulldisk": {
-                1: "GeoColor (True Color)",
-                2: "Band 2 - Red Visible",
-                13: "Band 13 - Clean Longwave Infrared Window",
-            },
-            "mesosector1": {
-                1: "GeoColor (True Color)",
-                2: "Band 2 - Red Visible",
-                13: "Band 13 - Clean Longwave Infrared Window",
-            },
-            "mesosector2": {
-                1: "GeoColor (True Color)",
-                2: "Band 2 - Red Visible",
-                13: "Band 13 - Clean Longwave Infrared Window",
-            },
-            "tropicalatlantic": {
-                1: "GeoColor (True Color)",
-                2: "Band 2 - Red Visible",
-                14: "Band 14 - Clean Longwave Infrared Window",
-                9: "Band 9 - Mid-level Water Vapor",
-            },
-            "tropicalpacific": {
-                1: "GeoColor (True Color)",
-                2: "Band 2 - Red Visible",
-                14: "Band 14 - Clean Longwave Infrared Window",
-                9: "Band 9 - Mid-level Water Vapor",
-            },
+            "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+            "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "mesosector1": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "mesosector2": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+            "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
         }
 
         # Error handling for invalid product code
         if product_code not in product_codes[region]:
             raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
 
-        # Construct the image URL based on the region and product code
-        band_or_product = "GEOCOLOR" if product_code == 1 else f"C{product_code}"
+        # Define image_links with the provided URLs (updated with new links 8/16/24)
+        image_links = {
+            ("conus", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_1.jpg",
+            ("tropicalatlantic", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("mesosector1", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_1.jpg",
+            ("mesosector1", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_1.jpg",
+            ("fulldisk", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/fulldisk_full/latest_fulldisk_full_1.jpg",
+            ("fulldisk", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/fulldisk_full/latest_fulldisk_full_1.jpg",
+            ("mesosector2", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_2.jpg",
+            ("mesosector2", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_2.jpg",
+            ("mesosector2", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_vis_sqrt/latest_meso_2.jpg",
 
-        if region == "conus":
-            image_url = f"{config.GOES_SATELLITE_URL}conus_band.php?sat=G16&band={band_or_product}&length=24"
-        elif region == "fulldisk":
-            image_url = f"{config.GOES_SATELLITE_URL}fulldisk.php?sat=G16&band={band_or_product}&length=24"
-        elif region in ["tropicalatlantic", "tropicalpacific"]:
-            image_url = f"{config.GOES_SATELLITE_URL}{region}_band.php?sat=G16&band={band_or_product}&length=24"
-        else:  # For mesosectors
-            image_url = f"{config.GOES_SATELLITE_URL}mesosector.php?sat=G16&sector={region}&band={band_or_product}&length=24"
+            # New links
+            ("gomex", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/gulf/latest_gulf_1.jpg",
+            ("gomex", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/gulf/latest_gulf_1.jpg",
+            ("gomex", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/gulf/latest_gulf_1.jpg",
+            ("ne", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/ne/latest_ne_1.jpg",
+            ("ne", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/ne/latest_ne_1.jpg",
+            ("ne", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/ne/latest_ne_1.jpg",
+            ("tropicalatlantic", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("tropicalatlantic", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("tropicalatlantic", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("conus", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/conus/latest_conus_1.jpg",
+            ("conus", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/latest_conus_1.jpg",
+            ("conus", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/conus/latest_conus_1.jpg"
+            # ... add more links as needed, unless someone wants to do OCONUS stuff that's probably a wrap
+        }
 
-        # Fetch satellite image
-        response = requests.get(image_url)
-        response.raise_for_status()
-
-        # Load and process the image
-        img = Image.open(BytesIO(response.content))
-        fig, ax = plt.subplots(figsize=(10, 10))
-        ax.imshow(img)
-        ax.axis('off')
-
-        # Add the logo
-        add_map_overlay(ax, logo_path="logo.png")  # Make sure you have a logo.png file
-
-        # Save plot to BytesIO object
-        buffer = BytesIO()
-        plt.savefig(buffer, format='png')
-        buffer.seek(0)
-        plt.close(fig)
-
-        await ctx.send(file=discord.File(buffer, f"{product_codes[region][product_code]}.png"))
-        logging.info(f"User {ctx.author} requested satellite image for {region} (product code {product_code})")
+        # RBG under 22 is RAYLEIGH CORRECTED VISIBILITY not 'red green blue' or an airmass product
 
     except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
         await ctx.send(f"Error retrieving/parsing satellite imagery: {e}")
-        logging.error(f"Error retrieving/parsing satellite imagery: {e}")
 
 
 # --- Astronomy Command ---
@@ -559,7 +518,7 @@ async def ascat(ctx, storm_id: str = None):
 
         # Parse the HTML to find active storms
         soup = BeautifulSoup(response.content, 'html.parser')
-        active_storms = extract_active_storms(soup)  # Replace with your actual parsing logic
+        active_storms = extract_active_storms(soup)
 
         if storm_id is None:
             # If no storm_id is provided, list the active storms
@@ -582,7 +541,7 @@ async def ascat(ctx, storm_id: str = None):
 
         # Parse the HTML to extract image URLs
         soup = BeautifulSoup(response.content, 'html.parser')
-        image_urls = extract_image_urls(soup)  # Replace with your actual parsing logic
+        image_urls = extract_image_urls(soup)
 
         # Download and send images
         for image_url in image_urls:
@@ -593,31 +552,72 @@ async def ascat(ctx, storm_id: str = None):
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing ASCAT imagery: {e}")
 
-# Placeholder functions for parsing (you'll need to implement these)
+# Functions for parsing 
 def extract_active_storms(soup):
     """Parses the BeautifulSoup object (soup) to extract a list of active storm IDs."""
-    # ... your implementation here
-    pass
+    active_storms_table = soup.find('table', {'id': 'active_storm_table'})
+    if active_storms_table:
+        storm_links = active_storms_table.find_all('a')
+        return [link.text.strip() for link in storm_links]
+    else:
+        return []  # No active storms found
 
 def extract_image_urls(soup):
     """Parses the BeautifulSoup object (soup) to extract a list of image URLs."""
-    # ... your implementation here
-    pass
+    image_tags = soup.find_all('img', {'class': 'product_image'})
+    base_url = "https://www.fnmoc.navy.mil" 
+    return [base_url + img['src'] for img in image_tags]
 
-
+# --- Alerts Command ---
 @bot.command()
 async def alerts(ctx, location: str = None):
     """Fetches and displays current weather alerts for a specified location or the user's location."""
 
-    await ctx.send("This feature is not yet implemented. Stay tuned for updates!")
+    if location is None:
+        # ... (same as before, handle user location if not provided)
 
-    # TODO:
-    # 1. If no location, use user's location from profile (if available) or prompt for input.
-    # 2. Fetch alerts from NWS API (https://www.weather.gov/documentation/services-web-api)
-    # 3. Filter alerts by type and/or severity (e.g., tornado, severe thunderstorm)
-    # 4. Format alerts into a user-friendly message (embed is recommended)
-    # 5. Send the message to the channel
+    location = location.lower()  # Convert input to lowercase for easier comparison
 
+    if location in state_abbreviations_to_fips:
+        state_fips = state_abbreviations_to_fips[location]
+        alerts_url = f"https://api.weather.gov/alerts/active?area={state_fips}" 
+    else:
+        # ... (handle other location types if needed, or provide an error message)
+        await ctx.send("Invalid location. Please provide a two-letter state abbreviation (e.g., 'ga' for Georgia).")
+        return
+
+    response = requests.get(alerts_url)
+
+    if response.status_code == 200:
+        alerts_data = response.json()
+
+        filtered_alerts = []
+        for alert in alerts_data['features']:
+            event = alert['properties']['event']
+            severity = alert['properties']['severity']
+
+            # Customize filtering criteria here if needed
+            filtered_alerts.append(alert)
+
+        if filtered_alerts:
+            for alert in filtered_alerts:
+                properties = alert['properties']
+                embed = discord.Embed(
+                    title=properties['headline'],
+                    color=discord.Color.red() 
+                )
+                embed.add_field(name="Severity", value=properties['severity'], inline=True)
+                embed.add_field(name="Effective", value=properties['onset'], inline=True)
+                embed.add_field(name="Expires", value=properties['expires'], inline=True)
+                embed.add_field(name="Area", value=", ".join(properties['areaDesc']), inline=False)
+                embed.add_field(name="Description", value=properties['description'], inline=False)
+                embed.add_field(name="Instructions", value=properties['instruction'] or "None", inline=False)
+                await ctx.send(embed=embed)
+        else:
+            await ctx.send("No weather alerts found for the specified location.")
+
+    else:
+        await ctx.send(f"Error fetching alerts: {response.status_code}")
 
 # --- Models Command, under the command $weather ---
 # Setup the Open-Meteo API client with cache and retry on error
@@ -723,19 +723,49 @@ def get_coordinates(location):
         return None
 # new
 
+# --- Lightning Command ---
 @bot.command()
-async def lightning(ctx, region: str = None):
-    """Displays lightning strike data for a specified region."""
+async def lightning(ctx, icao: str, radius: int = 5, 10, 25sat):
+    """Checks for lightning strikes within a specified radius of an ICAO airport."""
 
-    await ctx.send("This feature is not yet implemented. Stay tuned for updates!")
+    try:
+        # 1. Get airport coordinates (you'll need to implement this function)
+        airport_coords = get_airport_coordinates(icao)
+        if airport_coords is None:
+            await ctx.send(f"Could not find airport with ICAO code {icao}.")
+            return
 
-    # TODO:
-    # 1. If no region, use user's location or prompt for input
-    # 2. Fetch lightning data from a provider (Earth Networks, Vaisala, NLDN)
-    # 3. Filter strikes by region and time range (if applicable)
-    # 4. Visualize lightning strikes on a map (using Cartopy or similar)
-    # 5. Send the map image or a text summary to the channel
+        # 2. Construct the API URL (replace with your actual credentials)
+        api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET'
 
+        # 3. Fetch lightning data
+        request = urllib.request.urlopen(api_url)
+        response = request.read()
+        data = json.loads(response)
+        request.close()
+
+        # 4. Check for success and process data
+        if data['success']:
+            lightning_data = data['data']
+
+            # 5. Check for strikes within the radius (using the provided distance function)
+            has_lightning = any(
+                distance(strike['latitude'], strike['longitude'], airport_coords[0], airport_coords[1]) <= radius
+                for strike in lightning_data
+            )
+
+            # 6. Send the result
+            if has_lightning:
+                await ctx.send(f"Lightning detected within {radius} miles of {icao}.")
+            else:
+                await ctx.send(f"No lightning detected within {radius} miles of {icao}.")
+
+        else:
+            await ctx.send(f"An error occurred: {data['error']['description']}")
+
+    except Exception as e:
+        await ctx.send(f"Error checking for lightning: {e}")
+	    
 @bot.command()
 async def webcam(ctx, location: str):
     """Displays a weather webcam image for a specified location."""
