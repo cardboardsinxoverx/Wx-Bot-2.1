@@ -725,7 +725,7 @@ def get_coordinates(location):
 
 # --- Lightning Command ---
 @bot.command()
-async def lightning(ctx, icao: str, radius: int = 5, 10, 25sat):
+async def lightning(ctx, icao: str, radius: int = 5, 10, 25):
     """Checks for lightning strikes within a specified radius of an ICAO airport."""
 
     try:
@@ -765,47 +765,16 @@ async def lightning(ctx, icao: str, radius: int = 5, 10, 25sat):
 
     except Exception as e:
         await ctx.send(f"Error checking for lightning: {e}")
-	    
+
+# --- Webcam Command --- 
 @bot.command()
 async def webcam(ctx, location: str):
     """Displays a weather webcam image for a specified location."""
 
     await ctx.send("This feature is not yet implemented. Stay tuned for updates!")
 
-    # TODO:
-    # 1. Find a suitable source for weather webcam images (many options exist)
-    # 2. Fetch the image URL for the specified location or camera
-    # 3. Send the image to the channel
+    # i got it written idk if it'll break the bot or not, im not comfortable with this command
 
-# --- RAP Mesoscale Analysis College of DuPage ---
-#@bot.command()
-#async def cod(ctx, product_code: str):
-#   """Fetches weather data from College of DuPage.
-#   try:
-#       product_info = config.RAP_PRODUCTS.get(product_code)
-#        if not product_info:
-#            raise ValueError("Invalid product code. Available options are: " + ", ".join(config.RAP_PRODUCTS.keys()))
-#
-#        image_url = product_info["url"]
-#        response = requests.get(image_url)
-#        response.raise_for_status()
-#        img = Image.open(BytesIO(response.content))
-
-        # (Optional) Add logo or other overlays to the image
-        # ...
-
-#        buffer = BytesIO()
-#        img.save(buffer, format="PNG")
-#        buffer.seek(0)
-
-#        await ctx.send(file=discord.File(buffer, f"cod_{product_code}.png"))
-
-#   except (requests.exceptions.RequestException, ValueError) as e:
-#        await ctx.send(f"Error fetching COD data: {e}")
-#this isn't finished yet
-# trying to expand this still, we need more maps. ohh. probably won't do it. i might to the uhh unit conversion too. i know what to do to get the RAP mesoscale section to work, I just wanna go ahead and see if the both works and worry about this later
-
-# i did have a help section that belongs here but it was giving me problems so i deleted it, not that important
 
 if __name__ == '__main__':
     # Configure logging
