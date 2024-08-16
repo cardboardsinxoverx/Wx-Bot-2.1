@@ -15,6 +15,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import sharppy
 import sharppy.plot.skew as skew
+import cartopy
 import cartopy.crs as ccrs
 import os
 import json
@@ -403,12 +404,13 @@ async def sat(ctx, region: str = config.DEFAULT_REGION, product_code: int = conf
         await ctx.send(f"Error retrieving/parsing satellite imagery: {e}")
         logging.error(f"Error retrieving/parsing satellite imagery: {e}")
 
+
 # --- Astronomy Command ---
 @bot.command()
 async def astro(ctx, location: str = None):
-    """Provides sunrise, sunset, and moon phase information for a given location. this section will probably need some work fam. you just type in a city, i guess the country shouldn't matter."""
+    """Provides sunrise, sunset, moon phase, and twilight information for a given location."""
     if not location:
-        await ctx.send("Please provide a location (e.g., '$astro New York City')")
+        await ctx.send("Please provide a location (e.g., '$astro New York City' or '$astro kmge'") # i haven't found a way to specify cities like the 95 jacksonvilles in the USA, so its a lot easier to just type in the ICAO
         return
 
     try:
@@ -425,17 +427,31 @@ async def astro(ctx, location: str = None):
         # Get current time in the specified time zone
         now = datetime.datetime.now(pytz.timezone(timezone))
 
-        # Calculate sunrise and sunset using PyEphem
+        # Calculate sunrise, sunset, and twilight times using PyEphem
         obs = ephem.Observer()
         obs.lat = str(loc.latitude)
         obs.long = str(loc.longitude)
         obs.date = now
         sun = ephem.Sun()
+        moon = ephem.Moon()
+
         sunrise = obs.next_rising(sun).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
         sunset = obs.next_setting(sun).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
 
+        # Twilight calculations
+        obs.horizon = '-0:34'  # Civil twilight
+        civil_twilight_begin = obs.previous_rising(sun, use_center=True).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
+        civil_twilight_end = obs.next_setting(sun, use_center=True).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
+
+        obs.horizon = '-6'  # Civil twilight
+        nautical_twilight_begin = obs.previous_rising(sun, use_center=True).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
+        nautical_twilight_end = obs.next_setting(sun, use_center=True).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
+
+        obs.horizon = '-12'  # Astronomical twilight
+        astronomical_twilight_begin = obs.previous_rising(sun, use_center=True).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
+        astronomical_twilight_end = obs.next_setting(sun, use_center=True).datetime().replace(tzinfo=pytz.UTC).astimezone(pytz.timezone(timezone))
+
         # Calculate moon phase
-        moon = ephem.Moon()
         moon.compute(now)
         moon_phase = moon.phase
 
@@ -443,6 +459,12 @@ async def astro(ctx, location: str = None):
         response = f"Astronomy information for {location}:\n\n"
         response += f"**Sunrise:** {sunrise.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
         response += f"**Sunset:** {sunset.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
+        response += f"**Civil Twilight Begin:** {civil_twilight_begin.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
+        response += f"**Civil Twilight End:** {civil_twilight_end.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
+        response += f"**Nautical Twilight Begin:** {nautical_twilight_begin.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
+        response += f"**Nautical Twilight End:** {nautical_twilight_end.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
+        response += f"**Astronomical Twilight Begin:** {astronomical_twilight_begin.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
+        response += f"**Astronomical Twilight End:** {astronomical_twilight_end.strftime('%Y-%m-%d %I:%M %p %Z')}\n"
         response += f"**Moon Phase:** {moon_phase:.1f}% (Illuminated)"
 
         await ctx.send(response)
@@ -450,7 +472,6 @@ async def astro(ctx, location: str = None):
     except (GeocoderTimedOut, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving astronomy information: {e}")
         logging.error(f"Error retrieving astronomy information for {location}: {e}")
-
 
 # --- Radar Command ---
 @bot.command()
