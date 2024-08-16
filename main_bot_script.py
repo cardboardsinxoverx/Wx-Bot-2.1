@@ -32,6 +32,7 @@ import geocoder
 import json
 # Load Configuration
 import config
+import signal
 
 
 def save_cache(cache_type, data):
@@ -93,6 +94,19 @@ def get_metar(icao, hoursback=0, format='json'):
     print(json_data[0]['rawOb'])
     return json_data[0]['rawOb']
 
+# --- Restart Command ---
+@bot.command()
+async def restart(ctx):
+    """Restarts the bot."""
+    try:
+        await ctx.send("Restarting...")
+        # Get the process ID of the current Python process
+        pid = os.getpid()
+        # Send SIGTERM signal to gracefully terminate the process
+        os.kill(pid, signal.SIGTERM) 
+    except Exception as e:
+        await ctx.send(f"Error during restart: {e}")
+# no idea of that works or not, lets find out
 
 # --- METAR Command ---
 @bot.command(aliases=["wx"])
