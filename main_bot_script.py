@@ -544,7 +544,66 @@ def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png"
 
 
 
-# --- Placeholder Commands (For Future Implementation) ---
+# --- Placeholder Commands (these are now UP and may or may not work) ---
+
+# --- ASCAT Command ---
+@bot.command()
+async def ascat(ctx, storm_id: str = None):
+    """Fetches ASCAT images for the specified storm from FNMOC. If no storm_id is provided, it will list the active storms."""
+
+    try:
+        # Fetch the main FNMOC TCWEB page
+        base_url = "https://www.fnmoc.navy.mil/tcweb/cgi-bin/tc_home.cgi"
+        response = requests.get(base_url)
+        response.raise_for_status()
+
+        # Parse the HTML to find active storms
+        soup = BeautifulSoup(response.content, 'html.parser')
+        active_storms = extract_active_storms(soup)  # Replace with your actual parsing logic
+
+        if storm_id is None:
+            # If no storm_id is provided, list the active storms
+            if active_storms:
+                await ctx.send(f"Currently active storms: {', '.join(active_storms)}")
+            else:
+                await ctx.send("No active storms found.")
+            return  # Exit the command early
+
+        # Check if the requested storm is active
+        if storm_id.upper() not in [s.upper() for s in active_storms]:
+            raise ValueError(f"Storm '{storm_id}' not found among active storms. Currently active storms are: {', '.join(active_storms)}")
+
+        # Construct the URL for the storm's ASCAT image page (adjust as needed)
+        storm_url = f"{base_url}?YEAR=2024&MO=Aug&BASIN=ATL&STORM_NAME={storm_id}&SENSOR=&PHOT=yes&ARCHIVE=Mosaic&NAV=tc&DISPLAY=all&MOSAIC_SCALE=20%&STYLE=table&ACTIVES={','.join(active_storms)}&TYPE=ascat&CURRENT=LATEST.jpg&PROD=hires&DIR=/tcweb/dynamic/products/tc24/ATL/{storm_id}/ascat/hires&file_cnt=160"
+
+        # Fetch the storm's ASCAT image page
+        response = requests.get(storm_url)
+        response.raise_for_status()
+
+        # Parse the HTML to extract image URLs
+        soup = BeautifulSoup(response.content, 'html.parser')
+        image_urls = extract_image_urls(soup)  # Replace with your actual parsing logic
+
+        # Download and send images
+        for image_url in image_urls:
+            image_filename = image_url.split('/')[-1]
+            urllib.request.urlretrieve(image_url, image_filename)
+            await ctx.send(file=discord.File(image_filename))
+
+    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
+        await ctx.send(f"Error retrieving/parsing ASCAT imagery: {e}")
+
+# Placeholder functions for parsing (you'll need to implement these)
+def extract_active_storms(soup):
+    """Parses the BeautifulSoup object (soup) to extract a list of active storm IDs."""
+    # ... your implementation here
+    pass
+
+def extract_image_urls(soup):
+    """Parses the BeautifulSoup object (soup) to extract a list of image URLs."""
+    # ... your implementation here
+    pass
+
 
 @bot.command()
 async def alerts(ctx, location: str = None):
@@ -560,19 +619,109 @@ async def alerts(ctx, location: str = None):
     # 5. Send the message to the channel
 
 
+# --- Models Command, under the command $weather ---
+# Setup the Open-Meteo API client with cache and retry on error
+cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
+retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+openmeteo = openmeteo_requests.Client(session=retry_session)   
+
+
 @bot.command()
-async def model(ctx, model_name: str, parameter: str, location: str):
-    """Fetches and displays model forecast data for the specified parameter and location."""
+async def weather(ctx, location: str, *, variables: str = None):
+    """Fetches hourly weather data for a specified location from Open-Meteo."""
 
-    await ctx.send("This feature is not yet implemented. Stay tuned for updates!")
+    try:
+        # 1. Get coordinates for the location (you might need to implement this)
+        latitude, longitude = get_coordinates(location)  # Implement this function
 
-    # TODO:
-    # 1. Validate model_name (GFS, NAM, HRRR, etc.) and parameter (temperature, wind, etc.)
-    # 2. Fetch model data from a suitable source (NOMADS, Unidata, etc.)
-    # 3. Parse GRIB2 data using libraries like xarray or metpy
-    # 4. Extract the desired parameter for the specified location and time range
-    # 5. Visualize the data (plot, table, or text summary)
-    # 6. Send the formatted data to the channel
+        # 2. Define the list of weather variables to fetch
+        available_variables = [
+            "temperature_2m", "relative_humidity_2m", "dew_point_2m", 
+            "apparent_temperature", "precipitation_probability", "precipitation", 
+            "rain", "showers", "snowfall", "snow_depth", "weather_code", 
+            "pressure_msl", "surface_pressure", "cloud_cover", "cloud_cover_low", 
+            "cloud_cover_mid", "cloud_cover_high", "visibility", "evapotranspiration", 
+            "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", 
+            "wind_speed_80m", "wind_direction_10m",   
+ "wind_direction_80m", "wind_gusts_10m", 
+            "temperature_80m", "surface_temperature", "soil_temperature_0_to_10cm", 
+            "soil_temperature_10_to_40cm", "uv_index", "sunshine_duration", "cape", 
+            "lifted_index", "convective_inhibition", "freezing_level_height", 
+            "temperature_1000hPa", "temperature_925hPa", "temperature_850hPa", 
+            "temperature_700hPa", "temperature_500hPa", "temperature_300hPa", 
+            "dew_point_1000hPa", "dew_point_925hPa", "dew_point_800hPa", 
+            "dew_point_700hPa", "dew_point_500hPa", "dew_point_300hPa", 
+            "wind_speed_1000hPa", "wind_speed_925hPa", "wind_speed_850hPa", 
+            "wind_speed_700hPa", "wind_speed_500hPa", "wind_speed_300hPa", 
+            "wind_direction_1000hPa", "wind_direction_925hPa", "wind_direction_850hPa", 
+            "wind_direction_700hPa", "wind_direction_500hPa", "wind_direction_300hPa", 
+            "vertical_velocity_1000hPa", "vertical_velocity_925hPa", "vertical_velocity_850hPa", 
+            "vertical_velocity_700hPa", "vertical_velocity_500hPa", "vertical_velocity_300hPa", 
+            "geopotential_height_1000hPa", "geopotential_height_925hPa", "geopotential_height_850hPa", 
+            "geopotential_height_700hPa", "geopotential_height_500hPa", "geopotential_height_300hPa"
+        ]
+
+        if variables:
+            requested_variables = [var.strip() for var in variables.split(',')]
+            # Check if requested variables are valid
+            invalid_variables = [var for var in requested_variables if var not in available_variables]
+            if invalid_variables:
+                await ctx.send(f"Invalid variables: {', '.join(invalid_variables)}. Available variables: {', '.join(available_variables)}")
+                return
+        else:
+            # Default to some basic variables if none are specified
+            requested_variables = ["temperature_2m", "precipitation_probability", "wind_speed_10m"]
+
+        # 3. Fetch weather data
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "hourly": requested_variables,
+            "wind_speed_unit": "kn",
+            "precipitation_unit": "inch",
+            "timezone": "America/New_York",  # Adjust timezone if needed
+            "past_hours": 6,
+            "forecast_hours": 12,
+            "models": ["gfs_seamless", "gfs_global", "gfs_hrrr", "gfs_graphcast025"]  # Adjust models if needed
+        }
+        responses = openmeteo.weather_api(url, params=params)
+        response = responses[0]
+
+        # 4. Process hourly data
+        hourly = response.Hourly()
+        hourly_data = {"date": pd.date_range(
+            start=pd.to_datetime(hourly.Time(), unit="s", utc=True),
+            end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True),
+            freq=pd.Timedelta(seconds=hourly.Interval()),
+            inclusive="left"
+        )}
+        for i, var_name in enumerate(requested_variables):
+            hourly_data[var_name] = hourly.Variables(i).ValuesAsNumpy()
+
+        hourly_dataframe = pd.DataFrame(data=hourly_data)
+
+        # 5. Create and send embedded message (you'll likely want to customize this further)
+        embed = discord.Embed(title=f"Weather Forecast for {location}", color=discord.Color.blue())
+        for var_name in requested_variables:
+            embed.add_field(name=var_name, value=hourly_dataframe[var_name].to_string(index=False), inline=False)
+
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send(f"Error fetching weather data: {e}")
+
+def get_coordinates(location):
+    """Gets the latitude and longitude for a given location using Nominatim."""
+
+    geolocator = Nominatim(user_agent="WeatherBot")  # Replace with your bot's name in "_"
+    location_obj = geolocator.geocode(location)
+
+    if location_obj:
+        return location_obj.latitude, location_obj.longitude
+    else:
+        return None
+# new
 
 @bot.command()
 async def lightning(ctx, region: str = None):
