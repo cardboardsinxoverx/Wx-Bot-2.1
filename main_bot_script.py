@@ -82,12 +82,13 @@ async def on_message(message):
         return
     await bot.process_commands(message)  # Process bot commands
 
-#def get_metar(icao, hoursback=0, format='json'):
-  #  metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
- #   src = requests.get(metar_url).content
-  #  json_data = json.loads(src)
-  #  print(json_data[0]['rawOb'])
- #   return json_data[0]['rawOb'] # what the hell is this, i didn't write this
+# --- METAR Command --- 
+def get_metar(icao, hoursback=0, format='json'):
+    metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
+    src = requests.get(metar_url).content
+    json_data = json.loads(src)
+    print(json_data[0]['rawOb'])
+    return json_data[0]['rawOb'] # meep
 
 # --- Restart Command ---
 @bot.command()
@@ -102,68 +103,6 @@ async def restart(ctx):
     except Exception as e:
         await ctx.send(f"Error during restart: {e}")
 # no idea of that works or not, lets find out
-
-# --- METAR Command ---
-@bot.command(aliases=["wx"])
-async def metar(ctx, airport_code: str, hours_ago: int = config.DEFAULT_HOURS_BEFORE_NOW_METAR):
-    """Fetches METAR for the specified airport code. Optionally specify hours ago for historical data."""
-    try:
-        if hours_ago < 0:
-            raise ValueError("Invalid hours ago. Please enter a non-negative number.")
-
-        airport_code = airport_code.upper()
-
-        # Check for cached METARs first (only if hours_ago is within cache range)
-        if 0 <= hours_ago <= config.MAX_HOURS_METAR_CACHE:
-            cached_metars = [
-                entry for entry in metar_cache.get(airport_code, [])
-                if (datetime.datetime.utcnow() - datetime.datetime.fromisoformat(entry['time'])).total_seconds() / 3600 <= hours_ago
-            ]
-            if cached_metars:
-                for metar in cached_metars:
-                    embed = discord.Embed(title=f"METAR for {airport_code}", description=metar['data'])
-                    embed.set_footer(text=f"Observation Time: {metar['time']}Z")
-                    await ctx.send(embed=embed)
-                logging.info(f"User {ctx.author} requested METAR for {airport_code} (hours ago: {hours_ago}, cached)")
-                return  # If found in cache, no need to fetch from API
-
-        # If not in cache or requesting beyond cache range, fetch from API
-        max_hours_to_fetch = min(hours_ago, config.MAX_HOURS_METAR_API_REQUEST)  # Limit API request to avoid overloading
-        url = f"{config.AVIATION_WEATHER_URL}?dataSource=metars&requestType=retrieve&format=xml&stationString={airport_code}&hoursBeforeNow={max_hours_to_fetch}"
-
-        response = requests.get(url)
-        response.raise_for_status()
-
-        soup = BeautifulSoup(response.content, 'xml')
-        metar_elements = soup.find_all('METAR')  # Find all METAR elements
-
-        if not metar_elements:
-            raise ValueError("METAR data not found.")
-
-        for metar_element in metar_elements:
-            metar_data = metar_element.find('raw_text').text
-            metar_time = metar_element.find('observation_time').text
-
-            # Prepare and send response
-            embed = discord.Embed(title=f"METAR for {airport_code}", description=metar_data)
-            embed.set_footer(text=f"Observation Time: {metar_time}Z")
-            await ctx.send(embed=embed)
-
-            # Update cache (only for current METARs)
-            if max_hours_to_fetch == 0:
-                if airport_code not in metar_cache:
-                    metar_cache[airport_code] = []
-                metar_cache[airport_code].append({
-                    "time": metar_time,
-                    "data": metar_data
-                })
-                save_cache("metar", metar_cache)
-
-        logging.info(f"User {ctx.author} requested METAR for {airport_code} (hours ago: {hours_ago})")
-
-    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
-        await ctx.send(f"Error retrieving/parsing METAR for {airport_code}: {e}")
-        logging.error(f"Error retrieving/parsing METAR for {airport_code}: {e}")
 
 # --- TAF Command ---
 @bot.command()
