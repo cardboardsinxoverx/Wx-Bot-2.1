@@ -82,14 +82,6 @@ async def on_message(message):
         return
     await bot.process_commands(message)  # Process bot commands
 
-# --- METAR Command --- 
-def get_metar(icao, hoursback=0, format='json'):
-    metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
-    src = requests.get(metar_url).content
-    json_data = json.loads(src)
-    print(json_data[0]['rawOb'])
-    return json_data[0]['rawOb'] # meep
-
 # --- Restart Command ---
 @bot.command()
 async def restart(ctx):
@@ -104,45 +96,60 @@ async def restart(ctx):
         await ctx.send(f"Error during restart: {e}")
 # no idea of that works or not, lets find out
 
+# --- METAR Command ---    
+"""Fetches METARs for the specified airport code."""
+def get_metar(icao, hoursback=0, format='json'):
+    try:
+        metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
+        src = requests.get(metar_url).content
+        json_data = json.loads(src)
+
+        # Check if any METAR data was found at all
+        if not json_data:
+            raise ValueError(f"No METAR data found for {icao}.")
+
+        # Extract the raw METAR observation
+        raw_metar = json_data[0]['rawText']  # Use 'rawText' instead of 'rawOb'
+
+        if not raw_metar:
+            raise ValueError("METAR data not found.")
+
+        return raw_metar
+
+    except requests.exceptions.RequestException as e:
+        # Handle network errors during fetching
+        raise Exception(f"Error fetching METAR data for {icao}: {e}")
+    except (KeyError, ValueError) as e:
+        # Handle potential parsing errors
+        raise Exception(f"Error parsing METAR data for {icao}: {e}")
+
+# rewrote both TAF and METAR sections to reflect the correct API pulling wizardry and the same error handling for uniformity
+
 # --- TAF Command ---
 @bot.command()
 async def taf(ctx, airport_code: str):
     """Fetches TAF for the specified airport code."""
     try:
-        # 1. Input Handling and Caching
+        # 1. Input Handling
         airport_code = airport_code.upper()
 
-        # Check for cached TAF (only if within cache range)
-        if 0 <= config.DEFAULT_HOURS_BEFORE_NOW_TAF <= config.MAX_HOURS_TAF_CACHE:
-            cached_tafs = [
-                entry for entry in taf_cache.get(airport_code, [])
-                if (datetime.datetime.utcnow() - datetime.datetime.fromisoformat(entry['time'])).total_seconds() / 3600 <= config.DEFAULT_HOURS_BEFORE_NOW_TAF
-            ]
-            if cached_tafs:
-                for taf in cached_tafs:
-                    embed = discord.Embed(title=f"TAF for {airport_code}", description=taf['data'])
-                    embed.set_footer(text=f"Issue Time: {taf['time']}Z")
-                    await ctx.send(embed=embed)
-                logging.info(f"User {ctx.author} requested TAF for {airport_code} (cached)")
-                return 
-
-        # 2. Construct URL
-        url = f"{config.AVIATION_WEATHER_URL}?dataSource=tafs&requestType=retrieve&format=xml&stationString={airport_code}&hoursBeforeNow={config.DEFAULT_HOURS_BEFORE_NOW_TAF}"
+        # 2. Construct URL (adjust based on ADDS API changes)
+        taf_url = f'https://aviationweather.gov/api/data/taf?ids={airport_code}&format=json'
 
         # 3. Fetch Data
-        response = requests.get(url)
+        response = requests.get(taf_url)
         response.raise_for_status()  # Raise an exception for HTTP errors
 
         # 4. Parse TAF
-        soup = BeautifulSoup(response.content, 'xml')
+        json_data = json.loads(response.content)
 
         # Check if any TAF data was found at all
-        if not soup.find('data'):
+        if not json_data:
             raise ValueError(f"No TAF data found for {airport_code}.")
 
         # Extract the latest TAF (assuming the first one is the most recent)
-        taf_data = soup.find('raw_text').text
-        taf_time = soup.find('issue_time').text
+        taf_data = json_data[0]['rawText']
+        taf_time = json_data[0]['issueTime']
 
         if not taf_data or not taf_time:
             raise ValueError("TAF data or issue time not found.")
@@ -152,28 +159,15 @@ async def taf(ctx, airport_code: str):
         embed.set_footer(text=f"Issue Time: {taf_time}Z")
         await ctx.send(embed=embed)
 
-        # 6. Update Cache (only for current TAFs)
-        if config.DEFAULT_HOURS_BEFORE_NOW_TAF == 0:
-            if airport_code not in taf_cache:
-                taf_cache[airport_code] = []
-            taf_cache[airport_code].append({
-                "time": taf_time,  # Use the extracted taf_time
-                "data": taf_data
-            })
-            save_cache("taf", taf_cache)
-
         logging.info(f"User {ctx.author} requested TAF for {airport_code}")
 
-    # 7. Error Handling 
+    # 6. Error Handling 
     except requests.exceptions.RequestException as e:
         await ctx.send(f"Error fetching TAF data for {airport_code}: {e}")
         logging.error(f"Error fetching TAF data for {airport_code}: {e}")
-    except AttributeError as e:
+    except (KeyError, ValueError) as e:  # Handle potential parsing errors
         await ctx.send(f"Error parsing TAF data for {airport_code}: {e}")
         logging.error(f"Error parsing TAF data for {airport_code}: {e}")
-    except ValueError as e:
-        await ctx.send(e)  # Display the specific ValueError message to the user
-        logging.error(f"ValueError in TAF command for {airport_code}: {e}")
 
 # --- Skew-T Command ---
 @bot.command()
@@ -202,17 +196,23 @@ async def skewt(ctx, station_code: str):
         fig = plt.figure(figsize=(8, 8))
         skew.plot(profile)
 
-        # Prepare and send the image
-        buffer = BytesIO()
-        plt.savefig(buffer, format='png')
-        buffer.seek(0)
+        # Save the Skew-T diagram temporarily
+        temp_image_path = f"skewt_{station_code}_observed.png"
+        plt.savefig(temp_image_path, format='png')
         plt.close(fig)
 
-        await ctx.send(file=discord.File(buffer, f"skewt_{station_code}_observed.png"))
+        # Add the bot avatar overlay
+        add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
+
+        # Send the stamped image as a Discord file
+        await ctx.send(file=discord.File(temp_image_path))
+
+        # Clean up the temporary image file
+        os.remove(temp_image_path)
 
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
-
+	    
 # --- Satellite Command ---
 @bot.command()
 async def sat(ctx, region: str, product_code: int):
@@ -220,12 +220,12 @@ async def sat(ctx, region: str, product_code: int):
 
     try:
         region = region.lower()
-        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne"] 
+        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "sp", "mw", "nw", "sw", "pac"]
 
         if region not in valid_regions:
             raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
 
-        # Product codes for different regions (updated with new regions and product codes)
+        # Product codes for different regions
         product_codes = {
             "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
             "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
@@ -234,46 +234,101 @@ async def sat(ctx, region: str, product_code: int):
             "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
             "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
             "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "sp": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
+            "mw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
+            "nw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
+            "sw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"}, 
+            "pac": {9: "Mid-level Water Vapor", 14: "Clean Longwave Infrared Window", 22: "RGB"} 
         }
 
         # Error handling for invalid product code
         if product_code not in product_codes[region]:
             raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
 
-        # Define image_links with the provided URLs (updated with new links 8/16/24)
-        image_links = {
-            ("conus", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_1.jpg",
-            ("tropicalatlantic", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("mesosector1", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_1.jpg",
-            ("mesosector1", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_1.jpg",
-            ("fulldisk", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/fulldisk_full/latest_fulldisk_full_1.jpg",
-            ("fulldisk", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/fulldisk_full/latest_fulldisk_full_1.jpg",
-            ("mesosector2", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_2.jpg",
-            ("mesosector2", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_2.jpg",
-            ("mesosector2", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_vis_sqrt/latest_meso_2.jpg",
-
-            # New links
-            ("gomex", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/gulf/latest_gulf_1.jpg",
-            ("gomex", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/gulf/latest_gulf_1.jpg",
-            ("gomex", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/gulf/latest_gulf_1.jpg",
-            ("ne", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/ne/latest_ne_1.jpg",
-            ("ne", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/ne/latest_ne_1.jpg",
-            ("ne", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/ne/latest_ne_1.jpg",
-            ("tropicalatlantic", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("tropicalatlantic", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("tropicalatlantic", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("conus", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/conus/latest_conus_1.jpg",
-            ("conus", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/latest_conus_1.jpg",
-            ("conus", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/conus/latest_conus_1.jpg"
-            # ... add more links as needed, unless someone wants to do OCONUS stuff that's probably a wrap
+        # Define base URLs for different GOES satellites and regions
+        base_urls = {
+            "goes16": {
+                "conus": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+                "fulldisk": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+                "mesosector1": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
+                "mesosector2": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
+                "tropicalatlantic": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+                "gomex": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+                "ne": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+                "sp": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+                "mw": "https://whirlwind.aos.wisc.edu/~wxp/goes16/"
+            },
+            "goes17": {
+                "nw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
+                "sw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
+                "pac": "https://whirlwind.aos.wisc.edu/~wxp/goes17/"
+            }
         }
 
-        # RBG under 22 is RAYLEIGH CORRECTED VISIBILITY not 'red green blue' or an airmass product
+        # Define product paths based on product code
+        product_paths = {
+            1: {  # GeoColor (True Color)
+                "conus": "geocolor/conus/",
+                "fulldisk": "geocolor/fulldisk_full/",
+                "mesosector1": "geocolor/meso_1/",
+                "mesosector2": "geocolor/meso_2/",
+                "tropicalatlantic": "geocolor/tropical_atlantic/"
+            },
+            2: {  # Red Visible
+                "conus": "vis/conus/",
+                "tropicalatlantic": "vis/tropical_atlantic/",
+                "mesosector2": "grb/meso_vis_sqrt/",
+                "gomex": "vis/gulf/",
+                "ne": "vis/ne/",
+                "sp": "vis/sp/",
+                "mw": "vis/mw/",
+                "nw": "vis/nw/",
+                "sw": "vis/sw/"
+            },
+            9: {  # Mid-level Water Vapor
+                "conus": "wvc/conus/",
+                "fulldisk": "wvc/fulldisk_full/",
+                "mesosector1": "grb/meso_wvc/",
+                "mesosector2": "grb/meso_wvc/",
+                "tropicalatlantic": "wvc/tropical_atlantic/",
+                "gomex": "wvc/gulf/",
+                "ne": "wvc/ne/",
+                "sp": "wvc/sp/",
+                "mw": "wvc/mw/",
+                "nw": "wvc/nw/",
+                "sw": "wvc/sw/",
+                "pac": "wvc/namer/"
+            },
+            13: {  # Clean Longwave Infrared Window (mesosector1, mesosector2)
+                "mesosector1": "grb/meso_ircm/",
+                "mesosector2": "grb/meso_ircm/"
+            },
+            14: {  # Clean Longwave Infrared Window (other regions)
+                "conus": "ircm/conus/",
+                "tropicalatlantic": "ircm/tropical_atlantic/",
+                "fulldisk": "ircm/fulldisk_full/",
+                "gomex": "ircm/gulf/",
+                "ne": "ircm/ne/",
+                "sp": "ircm/sp/",
+                "mw": "ircm/mw/",
+                "nw": "ircm/nw/",
+                "sw": "ircm/sw/",
+                "pac": "irc13m/namer/" 
+            },
+            22: {  # RGB
+                "conus": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/",
+                "tropicalatlantic": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/",
+                "sw": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/sw/",
+                "pac": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/namer/"
+            }
+        }
 
-    except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
-        await ctx.send(f"Error retrieving/parsing satellite imagery: {e}")
-
-
+        # Get the image URL based on region and product code
+        image_url = image_links.get((region, product_code))
+        if not image_url:
+            # If not found in image_links, construct the URL
+            satellite = "goes16" if region in base_urls["goes"]
+		
 # --- Astronomy Command ---
 @bot.command()
 async def astro(ctx, location: str = None):
@@ -344,22 +399,22 @@ async def astro(ctx, location: str = None):
 
 # --- Radar Command ---
 @bot.command()
-async def radar(ctx, region: str = "plains", overlay: str = "base"):  # Changed default overlay to "base"
+async def radar(ctx, region: str = "plains", overlay: str = "base"):
     """Displays a radar image for the specified region and overlay type."""
 
     try:
         region = region.lower()
         overlay = overlay.lower()
 
-        valid_regions = ["plains", "ne", "se", "sw", "nw"] 
-        valid_overlays = ["base", "totals"]  # Replaced "none" with "base"
+        valid_regions = ["plains", "ne", "se", "sw", "nw"]
+        valid_overlays = ["base", "totals"]
 
         if region not in valid_regions:
             raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
         if overlay not in valid_overlays:
             raise ValueError(f"Invalid overlay. Valid options are: {', '.join(valid_overlays)}")
 
-        # Radar image links (updated with "base" instead of "none")
+        # Radar image links
         image_links = {
             ("plains", "base"): "https://tempest.aos.wisc.edu/radar/plains3comp.gif",
             ("plains", "totals"): "https://tempest.aos.wisc.edu/radar/plainsPcomp.gif",
@@ -371,13 +426,34 @@ async def radar(ctx, region: str = "plains", overlay: str = "base"):  # Changed 
             ("sw", "totals"): "https://tempest.aos.wisc.edu/radar/swPcomp.gif",
             ("nw", "base"): "https://tempest.aos.wisc.edu/radar/nw3comp.gif",
             ("nw", "totals"): "https://tempest.aos.wisc.edu/radar/nwPcomp.gif",
-            # ... should be all the links we need for radar, like I said not looking for anything fancy here because obviously we use things like radarscope and grlevel3, but having a bot that can pull an image that's ready to save and post
-	    # is better than having to go to this website and click through the 95 links, right click, possibly needing change the format. you get what i mean
         }
+
+        # Get the image URL based on region and overlay
+        image_url = image_links.get((region, overlay))
+        if not image_url:
+            raise ValueError("Invalid region/overlay combination.")
+
+        # Fetch the image content
+        response = requests.get(image_url)
+        response.raise_for_status()
+
+        # Save the image temporarily
+        temp_image_path = "temp_radar_image.gif"
+        with open(temp_image_path, "wb") as f:
+            f.write(response.content)
+
+        # Add the bot avatar overlay
+        add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
+
+        # Send the stamped image as a Discord file
+        await ctx.send(file=discord.File(temp_image_path, filename="radar.gif"))
+
+        # Clean up the temporary image file
+        os.remove(temp_image_path)
 
     except (requests.exceptions.RequestException, ValueError) as e:
         await ctx.send(f"Error retrieving radar image: {e}")
-
+	    
 # --- overlay that wont work ---
 def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png", zoom=0.1):
     """Adds a marker (if lat/lon provided) and a logo to the map image.
@@ -431,6 +507,7 @@ def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png"
                             box_alignment=(1, 0),
                             zorder=10)
     ax.add_artist(ab_logo)
+# ens before this works, the file names and source maybe for it? needs to be correct. this was just some generic code written with "logo.png". I dont know what the bots avatar's name is and if this just isn't possible or its just too silly, then I'll revert the code. I just thought you'd be able to make it work from here 
 
 # --- ASCAT Command ---
 @bot.command()
