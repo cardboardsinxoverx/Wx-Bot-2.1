@@ -439,71 +439,39 @@ async def astro(ctx, location: str = None):
 
 # --- Radar Command ---
 @bot.command()
-async def radar(ctx, location: str = None):
-    """Fetches radar imagery from NWS for a specified location or the user's location (if set). so this is sorta like pulling a metar. you'd just type $radar ffc or the last three letters of the radar code. remember they aren't always the same as the airport, I'm just lucky I don't need to remember two codes."""
+async def radar(ctx, region: str = "plains", overlay: str = "base"):  # Changed default overlay to "base"
+    """Displays a radar image for the specified region and overlay type."""
+
     try:
-        geolocator = Nominatim(user_agent="weather-bot")
-        if location:
-            # Geocode provided location
-            loc = geolocator.geocode(location)
-            if not loc:
-                raise ValueError("Location not found.")
-            latitude, longitude = loc.latitude, loc.longitude
-        else:
-            # Attempt to use user's location from Discord profile
-            if ctx.author.nick:  # Check for nickname
-                location_str = ctx.author.nick
-            else:
-                location_str = ctx.author.name
-            loc = geolocator.geocode(location_str)
-            if not loc:
-                raise ValueError("Location not found. Please provide a location or set your nickname/username in Discord to your location.")
-            latitude, longitude = loc.latitude, loc.longitude
+        region = region.lower()
+        overlay = overlay.lower()
 
-        # Fetch radar image from NWS
-        radar_url = f"https://radar.weather.gov/ridge/lite/{latitude}_{longitude}_0.png"
-        response = requests.get(radar_url)
-        response.raise_for_status()
+        valid_regions = ["plains", "ne", "se", "sw", "nw"] 
+        valid_overlays = ["base", "totals"]  # Replaced "none" with "base"
 
-        # Load image
-        img = Image.open(BytesIO(response.content))
-        img_np = np.array(img)
+        if region not in valid_regions:
+            raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
+        if overlay not in valid_overlays:
+            raise ValueError(f"Invalid overlay. Valid options are: {', '.join(valid_overlays)}")
 
-        # Create figure and axes
-        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw={'projection': ccrs.PlateCarree()})
+        # Radar image links (updated with "base" instead of "none")
+        image_links = {
+            ("plains", "base"): "https://tempest.aos.wisc.edu/radar/plains3comp.gif",
+            ("plains", "totals"): "https://tempest.aos.wisc.edu/radar/plainsPcomp.gif",
+            ("ne", "base"): "https://tempest.aos.wisc.edu/radar/ne3comp.gif",
+            ("ne", "totals"): "https://tempest.aos.wisc.edu/radar/nePcomp.gif",
+            ("se", "base"): "https://tempest.aos.wisc.edu/radar/se3comp.gif",
+            ("se", "totals"): "https://tempest.aos.wisc.edu/radar/sePcomp.gif",
+            ("sw", "base"): "https://tempest.aos.wisc.edu/radar/sw3comp.gif",
+            ("sw", "totals"): "https://tempest.aos.wisc.edu/radar/swPcomp.gif",
+            ("nw", "base"): "https://tempest.aos.wisc.edu/radar/nw3comp.gif",
+            ("nw", "totals"): "https://tempest.aos.wisc.edu/radar/nwPcomp.gif",
+            # ... should be all the links we need for radar, like I said not looking for anything fancy here because obviously we use things like radarscope and grlevel3, but having a bot that can pull an image that's ready to save and post
+	    # is better than having to go to this website and click through the 95 links, right click, possibly needing change the format. you get what i mean
+        }
 
-        # Plot image
-        ax.imshow(img_np, origin='upper', extent=(-125, -67, 24, 50), transform=ccrs.PlateCarree())
-
-        # Plot marker with custom icon
-        add_map_overlay(ax, latitude, longitude)
-
-        # Additional map features (e.g., coastlines, borders)
-        ax.coastlines()
-        ax.add_feature(cartopy.feature.STATES)
-
-        # Add latitude and longitude labels
-        ax.set_xticks(np.arange(-120, -65, 5), crs=ccrs.PlateCarree())
-        ax.set_yticks(np.arange(25, 51, 5), crs=ccrs.PlateCarree())
-        lon_formatter = cartopy.mpl.ticker.LongitudeFormatter()
-        lat_formatter = cartopy.mpl.ticker.LatitudeFormatter()
-        ax.xaxis.set_major_formatter(lon_formatter)
-        ax.yaxis.set_major_formatter(lat_formatter)
-
-        # Save plot to BytesIO object
-        buffer = BytesIO()
-        plt.savefig(buffer, format='png')
-        buffer.seek(0)
-        plt.close(fig)
-
-        await ctx.send(file=discord.File(buffer, f"radar_{location}.png"))
-        logging.info(f"User {ctx.author} requested radar for {location}")
-
-    # except (requests.exceptions.RequestException, AttributeError, ValueError, geocoder.GeocoderTimedOut) as e:
-    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
-        await ctx.send(f"Error retrieving/parsing radar imagery for {location}: {e}")
-        logging.error(f"Error retrieving/parsing radar imagery for {location}: {e}")
-
+    except (requests.exceptions.RequestException, ValueError) as e:
+        await ctx.send(f"Error retrieving radar image: {e}")
 
 # --- overlay that wont work ---
 def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png", zoom=0.1):
