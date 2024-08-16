@@ -35,11 +35,9 @@ import config
 import signal
 from math import radians, cos, sin, asin, sqrt, tan, csc, sec, cot
 
-
 def save_cache(cache_type, data):
     with open(f"{cache_type}_cache.json", "w") as f:
         json.dump(data, f, indent=2)
-
 
 def load_cache(cache_name):
     try:
@@ -47,7 +45,6 @@ def load_cache(cache_name):
             return json.load(file)
     except FileNotFoundError:
         return {}  # Return an empty dictionary if the cache file doesn't exist
-
 
 # Data Storage (Caching)
 metar_cache = {}
@@ -64,7 +61,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 
-
 @bot.event
 async def on_ready():
     print(f'We have logged in as {bot.user}') # idk i hope this works
@@ -79,14 +75,12 @@ async def on_ready():
     #     "#hillarysemails"
     #     ]))
 
-
 # --- on_message Event Handler ---
 @bot.event
 async def on_message(message):
     if message.author == bot.user:  # Don't respond to self
         return
     await bot.process_commands(message)  # Process bot commands
-
 
 #def get_metar(icao, hoursback=0, format='json'):
   #  metar_url = f'https://aviationweather.gov/api/data/metar?ids={icao}&format={format}&hours={hoursback}'
@@ -279,7 +273,6 @@ async def skewt(ctx, station_code: str):
 
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
-
 
 # --- Satellite Command ---
 @bot.command()
@@ -500,11 +493,6 @@ def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png"
                             zorder=10)
     ax.add_artist(ab_logo)
 
-
-
-
-# --- Placeholder Commands (these are now UP and may or may not work) ---
-
 # --- ASCAT Command ---
 @bot.command()
 async def ascat(ctx, storm_id: str = None):
@@ -723,9 +711,38 @@ def get_coordinates(location):
         return None
 # new
 
+# need to implement this function to get airport coordinates so lightning command can work
+def get_airport_coordinates(icao):
+    # ... (future code here)
+
+def distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
+    """
+    # Earth's   
+ radius in miles
+    R = 3956 
+
+    # Convert latitude and longitude to radians 
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+
+    # Haversine formula 
+    dlat = lat2 - lat1
+    dlon = lon2   
+ - lon1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    
+    # Distance   
+ in miles
+    distance = R * c
+    
+    return distance
+
 # --- Lightning Command ---
 @bot.command()
-async def lightning(ctx, icao: str, radius: int = 5, 10, 25):
+async def lightning(ctx, icao: str, radius: int = 5):
     """Checks for lightning strikes within a specified radius of an ICAO airport."""
 
     try:
@@ -774,7 +791,6 @@ async def webcam(ctx, location: str):
     await ctx.send("This feature is not yet implemented. Stay tuned for updates!")
 
     # i got it written idk if it'll break the bot or not, im not comfortable with this command
-
 
 if __name__ == '__main__':
     # Configure logging
