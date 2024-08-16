@@ -221,77 +221,41 @@ async def taf(ctx, airport_code: str, *args):
 
 # --- Skew-T Command ---
 @bot.command()
-async def skewt(ctx, sounding_type: str, *args):
-    """Fetches sounding data and generates a Skew-T diagram using SHARPpy.
+async def skewt(ctx, station_code: str):
+    """Fetches sounding data from the University of Wyoming and generates a Skew-T diagram."""
 
-    Usage:
-    - $skewt observed <station_code>
-    - $skewt fcst <model> <forecast_hour> <station_code>
-    """
     try:
-        # 1. Input Validation and Parameter Setup
-        station_code = args[-1].upper()
-        valid_sounding_types = ["observed", "fcst"]
+        station_code = station_code.upper()
 
-        if sounding_type.lower() not in valid_sounding_types:
-            raise ValueError("Invalid sounding type. Please specify 'observed' or 'fcst'.")
+        # Construct the URL for the Wyoming sounding archive
+        sounding_url = f"https://weather.uwyo.edu/cgi-bin/sounding?region=naconf&TYPE=TEXT%3ALIST&YEAR=latest&MONTH=latest&FROM=0000&TO=2300&STNM={station_code}"
 
-        if sounding_type.lower() == "observed":
-            model = config.DEFAULT_SOUNDING_DATA_SOURCE
-            forecast_hour = 0
-        else:  # Forecast
-            if len(args) < 3:
-                raise ValueError("Missing model and/or forecast hour for forecast Skew-T.")
-            model = args[0].upper()
-            forecast_hour = int(args[1])
-
-            if model not in config.SOUNDING_MODELS:
-                raise ValueError(f"Invalid model. Valid options are: {', '.join(config.SOUNDING_MODELS.keys())}")
-            if forecast_hour < 0:
-                raise ValueError("Forecast hour must be a non-negative integer.")
-
-        # Construct Sounding URL
-        model_params = config.SOUNDING_MODELS[model]
-        if model == "HRRR":
-            sounding_url = f"{config.SPC_SOUNDING_URL}?data_source=HRRR&fcst_hour={forecast_hour}&airport={station_code}"
-        else:
-            model_params['fcst_len'] = forecast_hour  # Set forecast length for other models
-            sounding_url = f"{config.SPC_SOUNDING_URL}?{'&'.join([f'{k}={v}' for k, v in model_params.items()])}&airport={station_code}"
-
-
-        # 2. Fetch Sounding Data
+        # Fetch the sounding data
         response = requests.get(sounding_url)
         response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+        # Parse the HTML to extract the sounding text
+        soup = BeautifulSoup(response.content, 'html.parser')
         sounding_data = soup.find("pre").text.strip()
 
         if not sounding_data:
             raise ValueError("Sounding data not found.")
 
-        # 3. Parse and Generate Skew-T
+        # Generate the Skew-T diagram using SHARPpy
         profile = sharppy.Profile.from_sounding(sounding_data)
         fig = plt.figure(figsize=(8, 8))
-        skew.plot(profile, showparcel=True)
+        skew.plot(profile)
 
-        # Add logo to Skew-T diagram
-        # add_map_overlay(fig.gca(), logo_path="logo.png")
-
-        # 4. Prepare and Send Response
+        # Prepare and send the image
         buffer = BytesIO()
         plt.savefig(buffer, format='png')
         buffer.seek(0)
         plt.close(fig)
 
-        sounding_type_str = "forecast" if forecast_hour > 0 else "observed"
-        await ctx.send(file=discord.File(buffer, f"skewt_{station_code}_{model}_{sounding_type_str}.png"))
+        await ctx.send(file=discord.File(buffer, f"skewt_{station_code}_observed.png"))
 
-        logging.info(f"User {ctx.author} requested Skew-T for {station_code} ({model} - {sounding_type_str})")
-
-    # 5. Error Handling
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
-        await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code} using {model}: {e}")
-        logging.error(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
+        await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
 
 # --- Satellite Command ---
 @bot.command()
