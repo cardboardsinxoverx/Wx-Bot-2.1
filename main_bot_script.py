@@ -92,6 +92,9 @@ async def restart(ctx):
         pid = os.getpid()
         # Send SIGTERM signal to gracefully terminate the process
         os.kill(pid, signal.SIGTERM) 
+	time.sleep(0.5)
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
     except Exception as e:
         await ctx.send(f"Error during restart: {e}")
 # no idea of that works or not, lets find out
