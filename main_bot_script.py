@@ -3,6 +3,7 @@
 # Imports and Setup
 import sys
 import time
+import subprocess
 #print(sys.path)
 import discord
 from discord.ext import commands
