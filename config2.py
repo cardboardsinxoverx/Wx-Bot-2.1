@@ -1,8 +1,8 @@
 # --- config.py
 
 import os
-# Discord Bot Token (using environment variables)
-DISCORD_TOKEN = os.getenv("MY_WEATHER_BOT_TOKEN") 
+# Discord Bot Token
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")  # Get from environment variable
 
 # Data Source URLs (Updated based on main_bot_script.txt)
 AVIATION_WEATHER_URL = "https://aviationweather.gov/api/data/"  # Adjusted for METAR/TAF API
