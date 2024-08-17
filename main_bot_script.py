@@ -137,7 +137,17 @@ def get_metar(icao, hoursback=0, format='json'):
         # Handle potential parsing errors
         raise Exception(f"Error parsing METAR data for {icao}: {e}")
 
-# rewrote both TAF and METAR sections to reflect the correct API pulling wizardry and the same error handling for uniformity
+
+@bot.comman()
+async def metar(ctx, airport_code: str):
+    """Sends latest metar for given airport"""
+    airport_code = airport_code.upper()
+    raw_metar = get_metar(airport_code)
+    
+    embed = discord.Embed(title=f"METAR for {airport_code}", description=raw_metar)
+    await ctx.send(embed=embed)
+    logging.info(f"User {ctx.author} requested METAR for {airport_code}")
+
 
 # --- TAF Command ---
 @bot.command()
