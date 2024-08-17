@@ -789,10 +789,4 @@ if __name__ == '__main__':
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
-    # Retrieve the custom token from environment variables
-custom_token = os.environ.get('MY_WEATHER_SCRIPT_TOKEN')
-
-if custom_token:
-    bot.run(custom_token)
-else:
-    print("Error: Custom token not found. Please set the 'MY_WEATHER_SCRIPT_TOKEN' environment variable.")
+      bot.run(config.DISCORD_TOKEN)
