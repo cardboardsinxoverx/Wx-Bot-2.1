@@ -2,7 +2,8 @@
 
 # Imports and Setup
 import sys
-print(sys.path)
+import time
+#print(sys.path)
 import discord
 from discord.ext import commands
 import requests
@@ -30,6 +31,7 @@ from PIL import Image
 import numpy as np
 import geocoder
 import json
+import psutil
 # Load Configuration
 import config
 import signal
@@ -63,7 +65,9 @@ bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 
 @bot.event
 async def on_ready():
-    print(f'We have logged in as {bot.user}') # idk i hope this works
+    print(f'We have logged in as {bot.user}')
+    #await ctx.send("What up bitches")
+    # idk i hope this works
     # channel = client.get_channel(459016306960760834)
 	# await channel.send(random.choice([
     #     "What's up bitches! I'm back!",
@@ -89,12 +93,19 @@ async def restart(ctx):
     try:
         await ctx.send("Restarting...")
         # Get the process ID of the current Python process
-        pid = os.getpid()
+        #pid = os.getpid()
         # Send SIGTERM signal to gracefully terminate the process
-        os.kill(pid, signal.SIGTERM) 
+        #os.kill(pid, signal.SIGTERM) 
+        #time.sleep(0.5)
+        #python = sys.executable
+        #os.execl(python, python, *sys.argv)
+        p = psutil.Process(os.getpid())
+        for handler in p.open_files() + p.connections():
+            os.close(handler.fd)
         time.sleep(0.5)
         python = sys.executable
         os.execl(python, python, *sys.argv)
+        await ctx.send("Back online bitches")
     except Exception as e:
         await ctx.send(f"Error during restart: {e}")
 # no idea of that works or not, lets find out
