@@ -37,7 +37,7 @@ import psutil
 # Load Configuration
 import config
 import signal
-# from math import radians, cos, sin, asin, sqrt, tan, csc, sec, cot
+from math import radians, cos, sin, asin, sqrt
 
 # def save_cache(cache_type, data):
 #     with open(f"{cache_type}_cache.json", "w") as f:
@@ -208,11 +208,12 @@ async def taf(ctx, airport_code: str):
 
     # 6. Error Handling 
     except requests.exceptions.RequestException as e:
-        await ctx.send(f"Error fetching TAF data for {airport_code}: {e}")
-        logging.error(f"Error fetching TAF data for {airport_code}: {e}")
-    except (KeyError, ValueError) as e:  # Handle potential parsing errors
-        await ctx.send(f"Error parsing TAF data for {airport_code}: {e}")
-        logging.error(f"Error parsing TAF data for {airport_code}: {e}")
+        # Handle network errors during fetching, including ConnectionError
+        if isinstance(e, requests.exceptions.ConnectionError) and "Failed to resolve" in str(e):
+            raise Exception(f"Unable to connect to aviationweather.gov. Check your internet connection or DNS settings.")
+        else:
+            raise Exception(f"Error fetching TAF data for {airport_code}: {e}")
+# improvements in TAFs error handling, maybe we can figure out whats wrong.
 
 # --- Skew-T Command ---
 @bot.command()
