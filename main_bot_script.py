@@ -264,117 +264,73 @@ async def skewt(ctx, station_code: str):
 async def sat(ctx, region: str, product_code: int):
     """Fetches satellite image for the specified region and product code using pre-defined links."""
 
-    # try:
-    region = region.lower()
-    valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "sp", "mw", "nw", "sw", "pac"]
+    try:
+        region = region.lower()
+        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne"]
 
-    if region not in valid_regions:
-        raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
+        if region not in valid_regions:
+            raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
 
-    # Product codes for different regions
-    product_codes = {
-        "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
-        "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-        "mesosector1": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-        "mesosector2": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-        "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
-        "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-        "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-        "sp": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
-        "mw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
-        "nw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
-        "sw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"}, 
-        "pac": {9: "Mid-level Water Vapor", 14: "Clean Longwave Infrared Window", 22: "RGB"} 
-    }
-
-    # Error handling for invalid product code
-    if product_code not in product_codes[region]:
-        raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
-
-    # Define base URLs for different GOES satellites and regions
-    base_urls = {
-        "goes16": {
-            "conus": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-            "fulldisk": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-            "mesosector1": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
-            "mesosector2": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
-            "tropicalatlantic": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-            "gomex": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-            "ne": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-            "sp": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-            "mw": "https://whirlwind.aos.wisc.edu/~wxp/goes16/"
-        },
-        "goes17": {
-            "nw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
-            "sw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
-            "pac": "https://whirlwind.aos.wisc.edu/~wxp/goes17/"
+        # Product codes for different regions
+        product_codes = {
+            "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+            "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "mesosector1": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "mesosector2": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+            "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
         }
-    }
 
-    # Define product paths based on product code
-    product_paths = {
-        1: {  # GeoColor (True Color)
-            "conus": "geocolor/conus/",
-            "fulldisk": "geocolor/fulldisk_full/",
-            "mesosector1": "geocolor/meso_1/",
-            "mesosector2": "geocolor/meso_2/",
-            "tropicalatlantic": "geocolor/tropical_atlantic/"
-        },
-        2: {  # Red Visible
-            "conus": "vis/conus/",
-            "tropicalatlantic": "vis/tropical_atlantic/",
-            "mesosector2": "grb/meso_vis_sqrt/",
-            "gomex": "vis/gulf/",
-            "ne": "vis/ne/",
-            "sp": "vis/sp/",
-            "mw": "vis/mw/",
-            "nw": "vis/nw/",
-            "sw": "vis/sw/"
-        },
-        9: {  # Mid-level Water Vapor
-            "conus": "wvc/conus/",
-            "fulldisk": "wvc/fulldisk_full/",
-            "mesosector1": "grb/meso_wvc/",
-            "mesosector2": "grb/meso_wvc/",
-            "tropicalatlantic": "wvc/tropical_atlantic/",
-            "gomex": "wvc/gulf/",
-            "ne": "wvc/ne/",
-            "sp": "wvc/sp/",
-            "mw": "wvc/mw/",
-            "nw": "wvc/nw/",
-            "sw": "wvc/sw/",
-            "pac": "wvc/namer/"
-        },
-        13: {  # Clean Longwave Infrared Window (mesosector1, mesosector2)
-            "mesosector1": "grb/meso_ircm/",
-            "mesosector2": "grb/meso_ircm/"
-        },
-        14: {  # Clean Longwave Infrared Window (other regions)
-            "conus": "ircm/conus/",
-            "tropicalatlantic": "ircm/tropical_atlantic/",
-            "fulldisk": "ircm/fulldisk_full/",
-            "gomex": "ircm/gulf/",
-            "ne": "ircm/ne/",
-            "sp": "ircm/sp/",
-            "mw": "ircm/mw/",
-            "nw": "ircm/nw/",
-            "sw": "ircm/sw/",
-            "pac": "irc13m/namer/" 
-        },
-        22: {  # RGB
-            "conus": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/",
-            "tropicalatlantic": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/",
-            "sw": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/sw/",
-            "pac": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/namer/"
+        # Error handling for invalid product code
+        if product_code not in product_codes[region]:
+            raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
+
+        # Define image_links with the provided URLs (including the missing link for conus, 14)
+        image_links = {
+            ("conus", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_4km_ircm.jpg",  # Added missing link
+            ("tropicalatlantic", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("mesosector1", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_1.jpg",
+            ("mesosector1", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_1.jpg",
+            ("fulldisk", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/fulldisk_full/latest_fulldisk_full_1.jpg",
+            ("fulldisk", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/fulldisk_full/latest_fulldisk_full_1.jpg",
+            ("mesosector2", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_2.jpg",
+            ("mesosector2", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_2.jpg",
+            ("mesosector2", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_vis_sqrt/latest_meso_2.jpg",
+
+            # New links
+            ("gomex", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/gulf/latest_gulf_1.jpg",
+            ("gomex", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/gulf/latest_gulf_1.jpg",
+            ("gomex", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/gulf/latest_gulf_1.jpg",
+            ("ne", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/ne/latest_ne_1.jpg",
+            ("ne", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/ne/latest_ne_1.jpg",
+            ("ne", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/ne/latest_ne_1.jpg",
+            ("tropicalatlantic", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("tropicalatlantic", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("tropicalatlantic", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            ("conus", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/conus/latest_conus_1.jpg",
+            ("conus", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/latest_conus_1.jpg",
+            ("conus", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/conus/latest_conus_1.jpg"
+            # ... add more links as needed
         }
-    }
 
-    # Get the image URL based on region and product code
-    image_url = product_paths.get((region, product_code))
-    # if not image_url and region in base_urls["goes"]:
-    # # If not found in product_paths, construct the URL
-    #     satellite = "goes16" 
+        # Retrieve the image URL
+        image_url = image_links.get((region, product_code))
 
+        if image_url:
+            print(f"{product_codes[region][product_code]} for {region}:\n{image_url}")
+        else:
+            raise KeyError(f"No image link found for region '{region}' and product code {product_code}")
+
+    except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
+        print(f"Error retrieving/parsing satellite imagery: {e}")
+# Example usage
+if __name__ == "__main__":
+    region = "conus"  # Replace with the desired region
+    product_code = 14  # Replace with the desired product code
+    get_satellite_image(region, product_code)
+
+# okay, sat command section works. just no fancy panty images, then again the radar one I wrote seemed to work posting images. just shoots you a link for now. we will go from here.
 		
 # --- Astronomy Command ---
 @bot.command()
