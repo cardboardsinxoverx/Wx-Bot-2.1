@@ -123,7 +123,7 @@ def get_metar(icao, hoursback=0, format='json'):
             raise ValueError(f"No METAR data found for {icao}.")
 
         # Extract the raw METAR observation
-        raw_metar = json_data[0]['rawText']  # Use 'rawText' instead of 'rawOb'
+        raw_metar = json_data[0]['rawOb']  # Use 'rawText' instead of 'rawOb'
 
         if not raw_metar:
             raise ValueError("METAR data not found.")
