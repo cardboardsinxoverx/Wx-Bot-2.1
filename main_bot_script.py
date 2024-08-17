@@ -4,6 +4,7 @@
 import sys
 import time
 import subprocess
+import random
 #print(sys.path)
 import discord
 from discord.ext import commands
@@ -38,26 +39,26 @@ import config
 import signal
 # from math import radians, cos, sin, asin, sqrt, tan, csc, sec, cot
 
-def save_cache(cache_type, data):
-    with open(f"{cache_type}_cache.json", "w") as f:
-        json.dump(data, f, indent=2)
+# def save_cache(cache_type, data):
+#     with open(f"{cache_type}_cache.json", "w") as f:
+#         json.dump(data, f, indent=2)
 
-def load_cache(cache_name):
-    try:
-        with open(f"{cache_name}_cache.json", "r") as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {}  # Return an empty dictionary if the cache file doesn't exist
+# def load_cache(cache_name):
+#     try:
+#         with open(f"{cache_name}_cache.json", "r") as file:
+#             return json.load(file)
+#     except FileNotFoundError:
+#         return {}  # Return an empty dictionary if the cache file doesn't exist
 
-# Data Storage (Caching)
-metar_cache = {}
-taf_cache = {}
-alert_cache = {}
+# # Data Storage (Caching)
+# metar_cache = {}
+# taf_cache = {}
+# alert_cache = {}
 
-# Load Cache Data on Startup
-metar_cache = load_cache("metar")  # keep getting and error with this line sometimes ohh
-taf_cache = load_cache("taf") # guess maybe this one too
-alert_cache = load_cache("alert") # this is gay
+# # Load Cache Data on Startup
+# metar_cache = load_cache("metar")  # keep getting and error with this line sometimes ohh
+# taf_cache = load_cache("taf") # guess maybe this one too
+# alert_cache = load_cache("alert") # this is gay
 
 # Initialize the bot
 intents = discord.Intents.default()
@@ -69,22 +70,32 @@ async def on_ready():
     print(f'We have logged in as {bot.user}')
     #await ctx.send("What up bitches")
     # idk i hope this works
-    # channel = client.get_channel(459016306960760834)
-	# await channel.send(random.choice([
-    #     "What's up bitches! I'm back!",
-    #     "Hello again",
-    #     "pls",
-    #     "Let me guess, you want a METAR for kmge?",
-    #     "We don't call 911",
-    #     "Welcome to The Thunderdome!",
-    #     "#hillarysemails"
-    #     ]))
+    channel = bot.get_channel(459016306960760834)
+    await channel.send(random.choice([
+        "What's up bitches! I'm back!",
+        "Hello again",
+        "pls",
+        "Let me guess, you want a METAR for kmge?",
+        "We don't call 911",
+        "Welcome to The Thunderdome!",
+        "#hillarysemails"
+        ]))
 
 # --- on_message Event Handler ---
 @bot.event
 async def on_message(message):
+    channel = message.channel
     if message.author == bot.user:  # Don't respond to self
         return
+    if message.content.startswith('bad bot'):
+        await channel.send(random.choice([
+        "No u",
+        "Do you want to do this for me??",
+        "meep.",
+        "hua",
+        "get rekt",
+        "no setp on snk"
+        ]))
     await bot.process_commands(message)  # Process bot commands
 
 
@@ -92,8 +103,8 @@ async def on_message(message):
 @bot.command()
 async def pull(ctx):
     await ctx.send("Pulling down changes from GitHub...")
-    subprocess.run('cd /home/virgil/dev/discord/Wx-Bot-2.1 && git pull')
-    await ctx.send('Finished. Good luck.')
+    res = subprocess.run(['git', 'pull'], capture_output=True, text=True)
+    await ctx.send(f'{res}\nFinished. Good luck.')
 
 
 # --- Restart Command ---
@@ -434,14 +445,14 @@ async def astro(ctx, location: str = None):
 
 # --- Radar Command ---
 @bot.command()
-async def radar(ctx, region: str = "plains", overlay: str = "base"):
+async def radar(ctx, region: str = "chase", overlay: str = "base"):
     """Displays a radar image for the specified region and overlay type."""
 
     try:
         region = region.lower()
         overlay = overlay.lower()
 
-        valid_regions = ["plains", "ne", "se", "sw", "nw"]
+        valid_regions = ["chase", "ne", "se", "sw", "nw"]
         valid_overlays = ["base", "totals"]
 
         if region not in valid_regions:
@@ -451,8 +462,8 @@ async def radar(ctx, region: str = "plains", overlay: str = "base"):
 
         # Radar image links
         image_links = {
-            ("plains", "base"): "https://tempest.aos.wisc.edu/radar/plains3comp.gif",
-            ("plains", "totals"): "https://tempest.aos.wisc.edu/radar/plainsPcomp.gif",
+            ("chase", "base"): "https://tempest.aos.wisc.edu/radar/chase3comp.gif",
+            ("chase", "totals"): "https://tempest.aos.wisc.edu/radar/chasePcomp.gif",
             ("ne", "base"): "https://tempest.aos.wisc.edu/radar/ne3comp.gif",
             ("ne", "totals"): "https://tempest.aos.wisc.edu/radar/nePcomp.gif",
             ("se", "base"): "https://tempest.aos.wisc.edu/radar/se3comp.gif",
