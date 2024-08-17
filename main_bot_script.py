@@ -319,16 +319,27 @@ async def sat(ctx, region: str, product_code: int):
 
         if image_url:
             print(f"{product_codes[region][product_code]} for {region}:\n{image_url}")
+            # Send the stamped image as a Discord file
+            # Fetch the image content
+            response = requests.get(image_url)
+            response.raise_for_status()
+
+            # Save the image temporarily
+            temp_image_path = "temp_sat_image.gif"
+            with open(temp_image_path, "wb") as f:
+                f.write(response.content)
+
+            # Add the bot avatar overlay
+            # add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
+
+            # Send the stamped image as a Discord file
+            await ctx.send(file=discord.File(temp_image_path, filename="sat.gif"))
         else:
             raise KeyError(f"No image link found for region '{region}' and product code {product_code}")
 
     except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
         print(f"Error retrieving/parsing satellite imagery: {e}")
-# Example usage
-if __name__ == "__main__":
-    region = "conus"  # Replace with the desired region
-    product_code = 14  # Replace with the desired product code
-    get_satellite_image(region, product_code)
+
 
 # okay, sat command section works. just no fancy panty images, then again the radar one I wrote seemed to work posting images. just shoots you a link for now. we will go from here.
 		
