@@ -138,7 +138,7 @@ def get_metar(icao, hoursback=0, format='json'):
         raise Exception(f"Error parsing METAR data for {icao}: {e}")
 
 
-@bot.comman()
+@bot.command()
 async def metar(ctx, airport_code: str):
     """Sends latest metar for given airport"""
     airport_code = airport_code.upper()
