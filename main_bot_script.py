@@ -33,7 +33,7 @@ import json
 # Load Configuration
 import config
 import signal
-from math import radians, cos, sin, asin, sqrt, tan, csc, sec, cot
+# from math import radians, cos, sin, asin, sqrt, tan, csc, sec, cot
 
 def save_cache(cache_type, data):
     with open(f"{cache_type}_cache.json", "w") as f:
@@ -218,116 +218,117 @@ async def skewt(ctx, station_code: str):
 async def sat(ctx, region: str, product_code: int):
     """Fetches satellite image for the specified region and product code using pre-defined links."""
 
-    try:
-        region = region.lower()
-        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "sp", "mw", "nw", "sw", "pac"]
+    # try:
+    region = region.lower()
+    valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "sp", "mw", "nw", "sw", "pac"]
 
-        if region not in valid_regions:
-            raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
+    if region not in valid_regions:
+        raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
 
-        # Product codes for different regions
-        product_codes = {
-            "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
-            "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "mesosector1": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "mesosector2": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
-            "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "sp": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
-            "mw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
-            "nw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
-            "sw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"}, 
-            "pac": {9: "Mid-level Water Vapor", 14: "Clean Longwave Infrared Window", 22: "RGB"} 
+    # Product codes for different regions
+    product_codes = {
+        "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+        "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+        "mesosector1": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+        "mesosector2": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+        "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+        "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+        "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+        "sp": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
+        "mw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
+        "nw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}, 
+        "sw": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"}, 
+        "pac": {9: "Mid-level Water Vapor", 14: "Clean Longwave Infrared Window", 22: "RGB"} 
+    }
+
+    # Error handling for invalid product code
+    if product_code not in product_codes[region]:
+        raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
+
+    # Define base URLs for different GOES satellites and regions
+    base_urls = {
+        "goes16": {
+            "conus": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+            "fulldisk": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+            "mesosector1": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
+            "mesosector2": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
+            "tropicalatlantic": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+            "gomex": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+            "ne": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+            "sp": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
+            "mw": "https://whirlwind.aos.wisc.edu/~wxp/goes16/"
+        },
+        "goes17": {
+            "nw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
+            "sw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
+            "pac": "https://whirlwind.aos.wisc.edu/~wxp/goes17/"
         }
+    }
 
-        # Error handling for invalid product code
-        if product_code not in product_codes[region]:
-            raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
-
-        # Define base URLs for different GOES satellites and regions
-        base_urls = {
-            "goes16": {
-                "conus": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-                "fulldisk": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-                "mesosector1": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
-                "mesosector2": "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/",
-                "tropicalatlantic": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-                "gomex": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-                "ne": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-                "sp": "https://whirlwind.aos.wisc.edu/~wxp/goes16/",
-                "mw": "https://whirlwind.aos.wisc.edu/~wxp/goes16/"
-            },
-            "goes17": {
-                "nw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
-                "sw": "https://whirlwind.aos.wisc.edu/~wxp/goes17/",
-                "pac": "https://whirlwind.aos.wisc.edu/~wxp/goes17/"
-            }
+    # Define product paths based on product code
+    product_paths = {
+        1: {  # GeoColor (True Color)
+            "conus": "geocolor/conus/",
+            "fulldisk": "geocolor/fulldisk_full/",
+            "mesosector1": "geocolor/meso_1/",
+            "mesosector2": "geocolor/meso_2/",
+            "tropicalatlantic": "geocolor/tropical_atlantic/"
+        },
+        2: {  # Red Visible
+            "conus": "vis/conus/",
+            "tropicalatlantic": "vis/tropical_atlantic/",
+            "mesosector2": "grb/meso_vis_sqrt/",
+            "gomex": "vis/gulf/",
+            "ne": "vis/ne/",
+            "sp": "vis/sp/",
+            "mw": "vis/mw/",
+            "nw": "vis/nw/",
+            "sw": "vis/sw/"
+        },
+        9: {  # Mid-level Water Vapor
+            "conus": "wvc/conus/",
+            "fulldisk": "wvc/fulldisk_full/",
+            "mesosector1": "grb/meso_wvc/",
+            "mesosector2": "grb/meso_wvc/",
+            "tropicalatlantic": "wvc/tropical_atlantic/",
+            "gomex": "wvc/gulf/",
+            "ne": "wvc/ne/",
+            "sp": "wvc/sp/",
+            "mw": "wvc/mw/",
+            "nw": "wvc/nw/",
+            "sw": "wvc/sw/",
+            "pac": "wvc/namer/"
+        },
+        13: {  # Clean Longwave Infrared Window (mesosector1, mesosector2)
+            "mesosector1": "grb/meso_ircm/",
+            "mesosector2": "grb/meso_ircm/"
+        },
+        14: {  # Clean Longwave Infrared Window (other regions)
+            "conus": "ircm/conus/",
+            "tropicalatlantic": "ircm/tropical_atlantic/",
+            "fulldisk": "ircm/fulldisk_full/",
+            "gomex": "ircm/gulf/",
+            "ne": "ircm/ne/",
+            "sp": "ircm/sp/",
+            "mw": "ircm/mw/",
+            "nw": "ircm/nw/",
+            "sw": "ircm/sw/",
+            "pac": "irc13m/namer/" 
+        },
+        22: {  # RGB
+            "conus": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/",
+            "tropicalatlantic": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/",
+            "sw": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/sw/",
+            "pac": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/namer/"
         }
+    }
 
-        # Define product paths based on product code
-        product_paths = {
-            1: {  # GeoColor (True Color)
-                "conus": "geocolor/conus/",
-                "fulldisk": "geocolor/fulldisk_full/",
-                "mesosector1": "geocolor/meso_1/",
-                "mesosector2": "geocolor/meso_2/",
-                "tropicalatlantic": "geocolor/tropical_atlantic/"
-            },
-            2: {  # Red Visible
-                "conus": "vis/conus/",
-                "tropicalatlantic": "vis/tropical_atlantic/",
-                "mesosector2": "grb/meso_vis_sqrt/",
-                "gomex": "vis/gulf/",
-                "ne": "vis/ne/",
-                "sp": "vis/sp/",
-                "mw": "vis/mw/",
-                "nw": "vis/nw/",
-                "sw": "vis/sw/"
-            },
-            9: {  # Mid-level Water Vapor
-                "conus": "wvc/conus/",
-                "fulldisk": "wvc/fulldisk_full/",
-                "mesosector1": "grb/meso_wvc/",
-                "mesosector2": "grb/meso_wvc/",
-                "tropicalatlantic": "wvc/tropical_atlantic/",
-                "gomex": "wvc/gulf/",
-                "ne": "wvc/ne/",
-                "sp": "wvc/sp/",
-                "mw": "wvc/mw/",
-                "nw": "wvc/nw/",
-                "sw": "wvc/sw/",
-                "pac": "wvc/namer/"
-            },
-            13: {  # Clean Longwave Infrared Window (mesosector1, mesosector2)
-                "mesosector1": "grb/meso_ircm/",
-                "mesosector2": "grb/meso_ircm/"
-            },
-            14: {  # Clean Longwave Infrared Window (other regions)
-                "conus": "ircm/conus/",
-                "tropicalatlantic": "ircm/tropical_atlantic/",
-                "fulldisk": "ircm/fulldisk_full/",
-                "gomex": "ircm/gulf/",
-                "ne": "ircm/ne/",
-                "sp": "ircm/sp/",
-                "mw": "ircm/mw/",
-                "nw": "ircm/nw/",
-                "sw": "ircm/sw/",
-                "pac": "irc13m/namer/" 
-            },
-            22: {  # RGB
-                "conus": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/",
-                "tropicalatlantic": "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/",
-                "sw": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/sw/",
-                "pac": "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/namer/"
-            }
-        }
+    # Get the image URL based on region and product code
+    image_url = product_paths.get((region, product_code))
+    # if not image_url and region in base_urls["goes"]:
+    # # If not found in product_paths, construct the URL
+    #     satellite = "goes16" 
 
-        # Get the image URL based on region and product code
-        image_url = image_links.get((region, product_code))
-        if not image_url:
-            # If not found in image_links, construct the URL
-            satellite = "goes16" if region in base_urls["goes"]
 		
 # --- Astronomy Command ---
 @bot.command()
@@ -577,8 +578,8 @@ def extract_image_urls(soup):
 async def alerts(ctx, location: str = None):
     """Fetches and displays current weather alerts for a specified location or the user's location."""
 
-    if location is None:
-        # ... (same as before, handle user location if not provided)
+    # if location is None:
+    #     # ... (same as before, handle user location if not provided)
 
     location = location.lower()  # Convert input to lowercase for easier comparison
 
@@ -625,9 +626,9 @@ async def alerts(ctx, location: str = None):
 
 # --- Models Command, under the command $weather ---
 # Setup the Open-Meteo API client with cache and retry on error
-cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
-retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-openmeteo = openmeteo_requests.Client(session=retry_session)   
+# cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
+# retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+# openmeteo = openmeteo_requests.Client(session=retry_session)
 
 
 @bot.command()
@@ -646,8 +647,7 @@ async def weather(ctx, location: str, *, variables: str = None):
             "pressure_msl", "surface_pressure", "cloud_cover", "cloud_cover_low", 
             "cloud_cover_mid", "cloud_cover_high", "visibility", "evapotranspiration", 
             "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", 
-            "wind_speed_80m", "wind_direction_10m",   
- "wind_direction_80m", "wind_gusts_10m", 
+            "wind_speed_80m", "wind_direction_10m", "wind_direction_80m", "wind_gusts_10m", 
             "temperature_80m", "surface_temperature", "soil_temperature_0_to_10cm", 
             "soil_temperature_10_to_40cm", "uv_index", "sunshine_duration", "cape", 
             "lifted_index", "convective_inhibition", "freezing_level_height", 
@@ -728,16 +728,15 @@ def get_coordinates(location):
 # new
 
 # need to implement this function to get airport coordinates so lightning command can work
-def get_airport_coordinates(icao):
-    # ... (future code here)
+# def get_airport_coordinates(icao):
+#     # ... (future code here)
 
 def distance(lat1, lon1, lat2, lon2):
     """
     Calculate the great circle distance between two points 
     on the earth (specified in decimal degrees)
     """
-    # Earth's   
- radius in miles
+    # Earth's radius in miles
     R = 3956 
 
     # Convert latitude and longitude to radians 
@@ -745,13 +744,11 @@ def distance(lat1, lon1, lat2, lon2):
 
     # Haversine formula 
     dlat = lat2 - lat1
-    dlon = lon2   
- - lon1
+    dlon = lon2 - lon1
     a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     
-    # Distance   
- in miles
+    # Distance in miles
     distance = R * c
     
     return distance
