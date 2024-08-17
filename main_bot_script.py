@@ -86,6 +86,15 @@ async def on_message(message):
         return
     await bot.process_commands(message)  # Process bot commands
 
+
+# --- git pull command ---
+@bot.command()
+async def pull(ctx):
+    await ctx.send("Pulling down changes from GitHub...")
+    subprocess.run('cd /home/virgil/dev/discord/Wx-Bot-2.1 && git pull')
+    await ctx.send('Finished. Good luck.')
+
+
 # --- Restart Command ---
 @bot.command()
 async def restart(ctx):
