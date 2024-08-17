@@ -108,7 +108,7 @@ async def restart(ctx):
         await ctx.send("Back online bitches")
     except Exception as e:
         await ctx.send(f"Error during restart: {e}")
-# no idea of that works or not, lets find out
+
 
 # --- METAR Command ---    
 """Fetches METARs for the specified airport code."""
@@ -458,7 +458,7 @@ async def radar(ctx, region: str = "plains", overlay: str = "base"):
             f.write(response.content)
 
         # Add the bot avatar overlay
-        add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
+        # add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
 
         # Send the stamped image as a Discord file
         await ctx.send(file=discord.File(temp_image_path, filename="radar.gif"))
