@@ -261,17 +261,17 @@ async def skewt(ctx, station_code: str):
 	    
 # --- Satellite Command ---
 @bot.command()
-async def sat(ctx, region: str, product_code: int):
+async def sat(ctx, region: str, product_code: str):  # Change product_code to str
     """Fetches satellite image for the specified region and product code using pre-defined links."""
 
     try:
         region = region.lower()
-        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "indian", "capeverde", "neatl"]
+        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "fl", "pacus", "wc", "ak", "wmesosector", "wmesosector2", "indian", "capeverde", "neatl"] 
 
         if region not in valid_regions:
             raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
 
-        # Product codes for different regions
+        # Product codes for different regions (updated with new regions and product codes)
         product_codes = {
             "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
             "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", "airmass": "RGB Air Mass"}, 
@@ -280,13 +280,23 @@ async def sat(ctx, region: str, product_code: int):
             "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
             "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
             "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "fl": {2: "Red Visible"},
+            "pacus": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+            "wc": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
+            "ak": {9: "Mid-level Water Vapor", 14: "Clean Longwave Infrared Window", 22: "RGB"},
+            "wmesosector": {2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "wmesosector2": {2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "indian": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
+            "capeverde": {2: "Red Visible", 14: "Clean Longwave Infrared Window"},
+            "neatl": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}
         }
 
-        # Error handling for invalid product code
-        if product_code not in product_codes[region]:
+        # Error handling for invalid product code 
+        if (product_code not in product_codes[region]) and \
+           not (region == 'fulldisk' and product_code == 'airmass'):
             raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
 
-        # Define image_links with the provided URLs (including the missing link for conus, 14)
+        # Define image_links with the provided URLs (organized by satellite and region)
         image_links = {
     "eumetsat": {  # New section for EUMETSAT links
         "indian": {
@@ -382,24 +392,27 @@ async def sat(ctx, region: str, product_code: int):
 
         if image_url:
             print(f"{product_codes[region][product_code]} for {region}:\n{image_url}")
-            # Send the stamped image as a Discord file
+            # Send the image as a Discord file
             # Fetch the image content
             response = requests.get(image_url)
             response.raise_for_status()
 
-            # Save the image temporarily
-            temp_image_path = "temp_sat_image.gif"
+            # Save the image temporarily (use .jpg extension)
+            temp_image_path = "temp_sat_image.jpg"
             with open(temp_image_path, "wb") as f:
                 f.write(response.content)
 
-            # Send the stamped image as a Discord file
-            await ctx.send(file=discord.File(temp_image_path, filename="sat.gif"))
+            # Send the image as a Discord file
+            await ctx.send(file=discord.File(temp_image_path, filename="sat.jpg"))
+
+            # Clean up the temporary image file
+            os.remove(temp_image_path)
 
         else:
             raise KeyError(f"No image link found for region '{region}' and product code {product_code}")
 
-    except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
-        print(f"Error retrieving/parsing satellite imagery: {e}")
+    except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError, OSError) as e:
+        await ctx.send(f"Error retrieving/parsing/sending satellite imagery: {e}")
 
 # updated links and dictionary format 18AUG2024
 		
