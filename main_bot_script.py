@@ -261,12 +261,12 @@ async def skewt(ctx, station_code: str):
 	    
 # --- Satellite Command ---
 @bot.command()
-async def sat(ctx, region: str, product_code: str):  # Change product_code to str
+async def sat(ctx, region: str, product_code: int):
     """Fetches satellite image for the specified region and product code using pre-defined links."""
 
     try:
         region = region.lower()
-        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "fl", "pacus", "wc", "ak", "wmesosector", "wmesosector2", "indian", "capeverde", "neatl"] 
+        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "indian", "capeverde", "neatl", 'fl', 'pacus', 'wc', 'ak', 'wmesosector', 'wmesosector2'] 
 
         if region not in valid_regions:
             raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
@@ -274,7 +274,7 @@ async def sat(ctx, region: str, product_code: str):  # Change product_code to st
         # Product codes for different regions (updated with new regions and product codes)
         product_codes = {
             "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
-            "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", "airmass": "RGB Air Mass"}, 
+            "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 5: "RGB Air Mass"},  # Changed "airmass" to 5
             "mesosector1": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
             "mesosector2": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
             "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
@@ -291,9 +291,8 @@ async def sat(ctx, region: str, product_code: str):  # Change product_code to st
             "neatl": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}
         }
 
-        # Error handling for invalid product code 
-        if (product_code not in product_codes[region]) and \
-           not (region == 'fulldisk' and product_code == 'airmass'):
+        # Error handling for invalid product code (simplified)
+        if product_code not in product_codes[region]:
             raise ValueError(f"Invalid product code for {region}. Valid codes are: {', '.join(map(str, product_codes[region].keys()))}")
 
         # Define image_links with the provided URLs (organized by satellite and region)
