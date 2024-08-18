@@ -757,27 +757,41 @@ def extract_image_urls(soup):
     return [base_url + img['src'] for img in image_tags]
 
 # --- Alerts Command ---
+# state abbreviations turnt into Federal Information Processing Standards
+state_abbreviations_to_fips = {
+    'al': '01', 'ak': '02', 'az': '04', 'ar': '05', 'ca': '06', 'co': '08', 'ct': '09', 'de': '10', 
+    'dc': '11', 'fl': '12', 'ga': '13', 'hi': '15', 'id': '16', 'il': '17', 'in': '18', 'ia': '19', 
+    'ks': '20', 'ky': '21', 'la': '22', 'me': '23', 'md': '24', 'ma': '25', 'mi': '26', 'mn': '27', 
+    'ms': '28', 'mo': '29', 'mt': '30', 'ne': '31', 'nv': '32', 'nh': '33', 'nj': '34', 'nm': '35', 
+    'ny': '36', 'nc': '37', 'nd': '38', 'oh': '39', 'ok': '40', 'or': '41', 'pa': '42', 'ri': '43', 
+    'sc': '45', 'sd': '46', 'tn': '47', 'tx': '48', 'ut': '49', 'vt': '50', 'va': '51', 'wa': '53', 
+    'wv': '54', 'wi': '55', 'wy': '56', 
+    # where you can't vote
+    'as': '60', 'gu': '66', 'mp': '69', 'pr': '72', 'vi': '78'
+}
+
 @bot.command()
 async def alerts(ctx, location: str = None):
     """Fetches and displays current weather alerts for a specified location or the user's location."""
 
-    # if location is None:
-    #     # ... (same as before, handle user location if not provided)
+    try:
+	    
+    location = location.lower()  # Convert input to lowercase for easier comparison, that way caps lock or something won't matter
 
-    location = location.lower()  # Convert input to lowercase for easier comparison
+        if location in state_abbreviations_to_fips:
+            state_fips = state_abbreviations_to_fips[location]
+            alerts_url = f"https://api.weather.gov/alerts/active?area={state_fips}" 
+        else:
+            # ... (handle other location types if needed, or provide an error message)
+            await ctx.send("Invalid location. Please provide a two-letter state abbreviation (e.g., 'ga' for Georgia).")
+            return
 
-    if location in state_abbreviations_to_fips:
-        state_fips = state_abbreviations_to_fips[location]
-        alerts_url = f"https://api.weather.gov/alerts/active?area={state_fips}" 
-    else:
-        # ... (handle other location types if needed, or provide an error message)
-        await ctx.send("Invalid location. Please provide a two-letter state abbreviation (e.g., 'ga' for Georgia).")
-        return
+        print(f"Fetching alerts from: {alerts_url}") # Debugging statement
+        response = requests.get(alerts_url)
 
-    response = requests.get(alerts_url)
-
-    if response.status_code == 200:
-        alerts_data = response.json()
+        if response.status_code == 200:
+            alerts_data = response.json()
+            print(f"Alerts data received: {alerts_data}")  # Debugging statement
 
         filtered_alerts = []
         for alert in alerts_data['features']:
@@ -807,6 +821,13 @@ async def alerts(ctx, location: str = None):
     else:
         await ctx.send(f"Error fetching alerts: {response.status_code}")
 
+    except requests.exceptions.RequestException as e:
+        await ctx.send(f"Error fetching alerts: {e}")
+    except json.JSONDecodeError as e:
+        await ctx.send(f"Error parsing alert data: {e}")
+    except KeyError as e:
+        await ctx.send(f"Unexpected data format in alerts response. Missing key: {e}")
+	    
 # --- Models Command, under the command $weather ---
 # Setup the Open-Meteo API client with cache and retry on error
 # cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
