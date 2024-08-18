@@ -231,46 +231,70 @@ async def taf(ctx, airport_code: str):
 # --- Skew-T Command ---
 @bot.command()
 async def skewt(ctx, station_code: str):
-    """Fetches sounding data from the University of Wyoming and generates a Skew-T diagram."""
+    """Fetches sounding data from NOAA's IGRA and generates a Skew-T diagram."""
 
     try:
         station_code = station_code.upper()
 
-        # Construct the URL for the Wyoming sounding archive
-        sounding_url = f"https://weather.uwyo.edu/cgi-bin/sounding?region=naconf&TYPE=TEXT%3ALIST&YEAR=latest&MONTH=latest&FROM=0000&TO=2300&STNM={station_code}"
+        # 1. Get your NOAA API token from config.py or environment variables 
+        noaa_token = config.NOAA_API_TOKEN  # Or os.getenv('NOAA_API_TOKEN')
 
-        # Fetch the sounding data
-        response = requests.get(sounding_url, verify=False)
+        # 2. Construct the IGRA API URL 
+        igra_url = f"https://www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=igra2-data&stationid={station_code}&extent=latest"
+
+        # 3. Fetch the sounding data
+        headers = {'token': noaa_token}
+        response = requests.get(igra_url, headers=headers)
         response.raise_for_status()
 
-        # Parse the HTML to extract the sounding text
-        soup = BeautifulSoup(response.content, 'html.parser')
-        sounding_data = soup.find("pre").text.strip()
+        # 4. Parse the JSON response
+        data = response.json()
 
-        if not sounding_data:
-            raise ValueError("Sounding data not found.")
+        if not data['results']:
+            raise ValueError(f"No sounding data found for station {station_code}. Check if the station code is valid or if data is available.")
 
-        # Generate the Skew-T diagram using SHARPpy
+        # Extract the latest sounding data
+        latest_sounding = data['results'][0]
+
+        # 5.  Construct sounding string in SHARPpy format from the JSON data
+        sounding_data = construct_sharppy_sounding(latest_sounding)
+
+        # 6. Generate the Skew-T diagram 
         profile = sharppy.Profile.from_sounding(sounding_data)
         fig = plt.figure(figsize=(8, 8))
         skew.plot(profile)
 
-        # Save the Skew-T diagram temporarily
+        # 7. Save the Skew-T diagram temporarily
         temp_image_path = f"skewt_{station_code}_observed.png"
         plt.savefig(temp_image_path, format='png')
         plt.close(fig)
 
-        # Add the bot avatar overlay
-        # add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
-
-        # Send the stamped image as a Discord file
+        # 8. Send the image
         await ctx.send(file=discord.File(temp_image_path))
 
-        # Clean up the temporary image file
+        # 9. Clean up
         os.remove(temp_image_path)
 
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
+
+# Helper function to construct SHARPpy sounding string from IGRA JSON data
+def construct_sharppy_sounding(sounding_data):
+    # Extract relevant data, assuming these keys exist in the JSON
+    pressure = [level['pressure'] for level in sounding_data['data'] if 'pressure' in level]
+    temperature = [level['temperature'] for level in sounding_data['data'] if 'temperature' in level]
+    dewpoint = [level['dewpoint'] for level in sounding_data['data'] if 'dewpoint' in level]
+    wind_speed = [level['windSpeed'] for level in sounding_data['data'] if 'windSpeed' in level]
+    wind_direction = [level['windDirection'] for level in sounding_data['data'] if 'windDirection' in level]
+
+    # Format data into SHARPpy sounding string (might need adjustments)
+    sounding_string = "%TITLE%\n"
+    sounding_string += "%RAW%\n"
+    for p, t, dp, ws, wd in zip(pressure, temperature, dewpoint, wind_speed, wind_direction):
+        sounding_string += f"{p:7.2f},{t:7.2f},{dp:7.2f},{ws:5.1f},{wd:5.1f}\n"
+    sounding_string += "%END%"
+
+    return sounding_string
 	    
 # --- Satellite Command ---
 @bot.command()
