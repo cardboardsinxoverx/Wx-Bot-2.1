@@ -400,7 +400,7 @@ async def sat(ctx, region: str, product_code: int):
         }  # Close the main image_links dictionary
 
         # Retrieve the image URL
-        image_url = image_links.get((region, product_code))
+        image_url = image_links[region][product_code]
 
         if image_url:
             print(f"{product_codes[region][product_code]} for {region}:\n{image_url}")
