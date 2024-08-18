@@ -288,31 +288,94 @@ async def sat(ctx, region: str, product_code: int):
 
         # Define image_links with the provided URLs (including the missing link for conus, 14)
         image_links = {
-            ("conus", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_4km_ircm.jpg",  # Added missing link
-            ("tropicalatlantic", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("mesosector1", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_1.jpg",
-            ("mesosector1", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_1.jpg",
-            ("fulldisk", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/fulldisk_full/latest_fulldisk_full_1.jpg",
-            ("fulldisk", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/fulldisk_full/latest_fulldisk_full_1.jpg",
-            ("mesosector2", 13): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_2.jpg",
-            ("mesosector2", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_2.jpg",
-            ("mesosector2", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_vis_sqrt/latest_meso_2.jpg",
-
-            # New links
-            ("gomex", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/gulf/latest_gulf_1.jpg",
-            ("gomex", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/gulf/latest_gulf_1.jpg",
-            ("gomex", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/gulf/latest_gulf_1.jpg",
-            ("ne", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/ne/latest_ne_1.jpg",
-            ("ne", 14): "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/ne/latest_ne_1.jpg",
-            ("ne", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/ne/latest_ne_1.jpg",
-            ("tropicalatlantic", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("tropicalatlantic", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("tropicalatlantic", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            ("conus", 2): "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/conus/latest_conus_1.jpg",
-            ("conus", 22): "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/latest_conus_1.jpg",
-            ("conus", 9): "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/conus/latest_conus_1.jpg"
-            # ... add more links as needed
+    "eumetsat": {  # New section for EUMETSAT links
+        "indian": {
+            14: "https://www.ssd.noaa.gov/eumet/indiano/rb.jpg",
+            2: "https://www.ssd.noaa.gov/eumet/indiano/vis.jpg",
+            9: "https://www.ssd.noaa.gov/eumet/indiano/wv.jpg"
+        },
+        "capeverde": {
+            14: "https://www.ssd.noaa.gov/eumet/eatl/rb.jpg",
+            2: "https://www.ssd.noaa.gov/eumet/eatl/vis.jpg"
+        },
+        "neatl": {
+            14: "https://www.ssd.noaa.gov/eumet/neatl/rb.jpg",
+            2: "https://www.ssd.noaa.gov/eumet/neatl/vis.jpg",
+            9: "https://www.ssd.noaa.gov/eumet/neatl/wv.jpg"
         }
+    } # close eumetsat dictionary
+    "goes16": {
+        "conus": {
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_1.jpg",
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/conus/latest_conus_1.jpg",
+            22: "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/latest_conus_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/conus/latest_conus_1.jpg"
+        },
+        "fulldisk": {
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/irc13m/fulldisk/latest_fulldisk_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/fulldisk/latest_fulldisk_1.jpg",
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/fulldisk/latest_fulldisk_1.jpg",
+            "airmass": "https://whirlwind.aos.wisc.edu/~wxp/goes16/multi_air_mass_rgb/fulldisk/latest_fulldisk_1.jpg"
+        },
+        "mesosector1": {
+            13: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_1.jpg"
+        },
+        "mesosector2": {
+            13: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_2.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_2.jpg",
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_vis_sqrt/latest_meso_2.jpg"
+        },
+        "tropicalatlantic": {
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+            22: "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/latest_tropical_atlantic_1.jpg"
+        },
+        "gomex": {
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/gulf/latest_gulf_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/gulf/latest_gulf_1.jpg",
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/gulf/latest_gulf_1.jpg"
+        },
+        "ne": {
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/ne/latest_ne_1.jpg",
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/ne/latest_ne_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/ne/latest_ne_1.jpg"
+        },
+        "fl": {
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/fl/latest_fl_1.jpg"
+        }
+    },  # close goes 16 dictionary
+    "goes17": {
+        "pacus": {
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/vis/conus/latest_conus_1.jpg",
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/ircm/conus/latest_conus_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/conus/latest_conus_1.jpg",
+            22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/conus/latest_conus_1.jpg"
+        },
+        "wc": {
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/vis/westcoast/latest_westcoast_1.jpg",
+            22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/westcoast/latest_westcoast_1.jpg",
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/ircm/westcoast/latest_westcoast_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/westcoast/latest_westcoast_1.jpg"
+        },
+        "ak": {
+            22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/ak/latest_ak_1.jpg",
+            14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/irc13m/ak/latest_ak_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/ak/latest_ak_1.jpg"
+        },
+        "wmesosector2": {
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_vis/latest_meso_2.jpg",
+            13: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_ircm/latest_meso_2.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_wvc/latest_meso_2.jpg"
+        },
+        "wmesosector": {
+            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_vis/latest_meso_1.jpg",
+            13: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_ircm/latest_meso_1.jpg",
+            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_wvc/latest_meso_1.jpg"
+        } 
+    }  # Close goes17 dictionary
+}  # Close the main image_links dictionary
 
         # Retrieve the image URL
         image_url = image_links.get((region, product_code))
@@ -329,9 +392,6 @@ async def sat(ctx, region: str, product_code: int):
             with open(temp_image_path, "wb") as f:
                 f.write(response.content)
 
-            # Add the bot avatar overlay
-            # add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
-
             # Send the stamped image as a Discord file
             await ctx.send(file=discord.File(temp_image_path, filename="sat.gif"))
         else:
@@ -340,8 +400,7 @@ async def sat(ctx, region: str, product_code: int):
     except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
         print(f"Error retrieving/parsing satellite imagery: {e}")
 
-
-# okay, sat command section works. just no fancy panty images, then again the radar one I wrote seemed to work posting images. just shoots you a link for now. we will go from here.
+# updated links and dictionary format 18AUG2024
 		
 # --- Astronomy Command ---
 @bot.command()
