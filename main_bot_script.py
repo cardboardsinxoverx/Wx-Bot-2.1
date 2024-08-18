@@ -116,14 +116,38 @@ async def on_message(message):
         ]))
     await bot.process_commands(message)  # Process bot commands
 
+# --- Maps Command --- 
+@bot.command()
+async def map(ctx):
+    """Sends a map image."""
 
+    try:
+        image_url = "https://github.com/cardboardsinxoverx/Wx-Bot-2.1/blob/main/sondes.jpg"  # please dont replace 
+
+        # Fetch the image content
+        response = requests.get(image_url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+
+        # Save the image temporarily
+        temp_image_path = "temp_map_image.jpg"
+        with open(temp_image_path, "wb") as f:
+            f.write(response.content)
+
+        # Send the image as a Discord file
+        await ctx.send(file=discord.File(temp_image_path))
+
+        # Clean up the temporary image file
+        os.remove(temp_image_path)
+
+    except requests.exceptions.RequestException as e:
+        await ctx.send(f"Error fetching map image: {e}")
+	    
 # --- git pull command ---
 @bot.command()
 async def pull(ctx):
     await ctx.send("Pulling down changes from GitHub...")
     res = subprocess.run(['git', 'pull'], capture_output=True, text=True)
     await ctx.send(f'{res}\nFinished. Good luck.')
-
 
 # --- Restart Command ---
 @bot.command()
