@@ -75,14 +75,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 
-#TODO add code for the following functions
-def get_airport_coordinates():
-    pass
-
-def state_abbreviations_to_fips():
-    pass
-
-
 @bot.event
 async def on_ready():
     print(f'We have logged in as {bot.user}')
@@ -1184,7 +1176,7 @@ Checks for lightning strikes within a specified radius of an ICAO airport.
 
 **Arguments:**
 
-*   `icao`: The ICAO code of the airport (e.g., 'KJFK', 'KATL').
+*   `icao`: The ICAO code of the airport (e.g., 'KPIT', 'KBIX').
 *   `radius` (optional): The radius (in miles) within which to check for lightning strikes (default: 5 miles).
 """
 
