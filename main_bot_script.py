@@ -303,7 +303,7 @@ async def sat(ctx, region: str, product_code: int):
             2: "https://www.ssd.noaa.gov/eumet/neatl/vis.jpg",
             9: "https://www.ssd.noaa.gov/eumet/neatl/wv.jpg"
         }
-    } # close eumetsat dictionary
+    }, # close eumetsat dictionary
     "goes16": {
         "conus": {
             14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_1.jpg",
