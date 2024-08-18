@@ -9,6 +9,8 @@ import random
 import discord
 from discord.ext import commands
 import requests
+import urllib3
+import openmeteo
 import datetime
 import pytz
 from bs4 import BeautifulSoup  # Instead of 'import BeautifulSoup'
@@ -29,15 +31,18 @@ from astropy.time import Time
 from timezonefinder import TimezoneFinder
 import ephem
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import PIL
 from PIL import Image
 import numpy as np
+import pandas as pd
 import geocoder
 import json
 import psutil
 # Load Configuration
 import config
 import signal
-from math import radians, cos, sin, asin, sqrt
+import math
+# from math import radians, cos, sin, asin, sqrt
 
 # def save_cache(cache_type, data):
 #     with open(f"{cache_type}_cache.json", "w") as f:
@@ -64,6 +69,14 @@ from math import radians, cos, sin, asin, sqrt
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
+
+#TODO add code for the following functions
+def get_airport_coordinates():
+    pass
+
+def state_abbreviations_to_fips():
+    pass
+
 
 @bot.event
 async def on_ready():
@@ -248,7 +261,7 @@ async def skewt(ctx, station_code: str):
         plt.close(fig)
 
         # Add the bot avatar overlay
-        add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
+        # add_bot_avatar_overlay(None, temp_image_path, avatar_url="https://your-bot-avatar-url.jpg", logo_size=50)
 
         # Send the stamped image as a Discord file
         await ctx.send(file=discord.File(temp_image_path))
@@ -297,94 +310,94 @@ async def sat(ctx, region: str, product_code: int):
 
         # Define image_links with the provided URLs (organized by satellite and region)
         image_links = {
-    "eumetsat": {  # New section for EUMETSAT links
-        "indian": {
-            14: "https://www.ssd.noaa.gov/eumet/indiano/rb.jpg",
-            2: "https://www.ssd.noaa.gov/eumet/indiano/vis.jpg",
-            9: "https://www.ssd.noaa.gov/eumet/indiano/wv.jpg"
-        },
-        "capeverde": {
-            14: "https://www.ssd.noaa.gov/eumet/eatl/rb.jpg",
-            2: "https://www.ssd.noaa.gov/eumet/eatl/vis.jpg"
-        },
-        "neatl": {
-            14: "https://www.ssd.noaa.gov/eumet/neatl/rb.jpg",
-            2: "https://www.ssd.noaa.gov/eumet/neatl/vis.jpg",
-            9: "https://www.ssd.noaa.gov/eumet/neatl/wv.jpg"
-        }
-    }, # close eumetsat dictionary
-    "goes16": {
-        "conus": {
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_1.jpg",
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/conus/latest_conus_1.jpg",
-            22: "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/latest_conus_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/conus/latest_conus_1.jpg"
-        },
-        "fulldisk": {
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/irc13m/fulldisk/latest_fulldisk_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/fulldisk/latest_fulldisk_1.jpg",
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/fulldisk/latest_fulldisk_1.jpg",
-            "airmass": "https://whirlwind.aos.wisc.edu/~wxp/goes16/multi_air_mass_rgb/fulldisk/latest_fulldisk_1.jpg"
-        },
-        "mesosector1": {
-            13: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_1.jpg"
-        },
-        "mesosector2": {
-            13: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_2.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_2.jpg",
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_vis_sqrt/latest_meso_2.jpg"
-        },
-        "tropicalatlantic": {
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/tropical_atlantic/latest_tropical_atlantic_1.jpg",
-            22: "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/latest_tropical_atlantic_1.jpg"
-        },
-        "gomex": {
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/gulf/latest_gulf_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/gulf/latest_gulf_1.jpg",
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/gulf/latest_gulf_1.jpg"
-        },
-        "ne": {
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/ne/latest_ne_1.jpg",
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/ne/latest_ne_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/ne/latest_ne_1.jpg"
-        },
-        "fl": {
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/fl/latest_fl_1.jpg"
-        }
-    },  # close goes 16 dictionary
-    "goes17": {
-        "pacus": {
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/vis/conus/latest_conus_1.jpg",
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/ircm/conus/latest_conus_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/conus/latest_conus_1.jpg",
-            22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/conus/latest_conus_1.jpg"
-        },
-        "wc": {
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/vis/westcoast/latest_westcoast_1.jpg",
-            22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/westcoast/latest_westcoast_1.jpg",
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/ircm/westcoast/latest_westcoast_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/westcoast/latest_westcoast_1.jpg"
-        },
-        "ak": {
-            22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/ak/latest_ak_1.jpg",
-            14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/irc13m/ak/latest_ak_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/ak/latest_ak_1.jpg"
-        },
-        "wmesosector2": {
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_vis/latest_meso_2.jpg",
-            13: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_ircm/latest_meso_2.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_wvc/latest_meso_2.jpg"
-        },
-        "wmesosector": {
-            2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_vis/latest_meso_1.jpg",
-            13: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_ircm/latest_meso_1.jpg",
-            9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_wvc/latest_meso_1.jpg"
-        } 
-    }  # Close goes17 dictionary
-}  # Close the main image_links dictionary
+            # "eumetsat": {  # New section for EUMETSAT links
+                "indian": {
+                    14: "https://www.ssd.noaa.gov/eumet/indiano/rb.jpg",
+                    2: "https://www.ssd.noaa.gov/eumet/indiano/vis.jpg",
+                    9: "https://www.ssd.noaa.gov/eumet/indiano/wv.jpg"
+                },
+                "capeverde": {
+                    14: "https://www.ssd.noaa.gov/eumet/eatl/rb.jpg",
+                    2: "https://www.ssd.noaa.gov/eumet/eatl/vis.jpg"
+                },
+                "neatl": {
+                    14: "https://www.ssd.noaa.gov/eumet/neatl/rb.jpg",
+                    2: "https://www.ssd.noaa.gov/eumet/neatl/vis.jpg",
+                    9: "https://www.ssd.noaa.gov/eumet/neatl/wv.jpg"
+                },
+            # }, # close eumetsat dictionary
+            # "goes16": {
+                "conus": {
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/conus/latest_conus_1.jpg",
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/conus/latest_conus_1.jpg",
+                    22: "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/conus/latest_conus_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/conus/latest_conus_1.jpg"
+                },
+                "fulldisk": {
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/irc13m/fulldisk/latest_fulldisk_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/fulldisk/latest_fulldisk_1.jpg",
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/fulldisk/latest_fulldisk_1.jpg",
+                    "airmass": "https://whirlwind.aos.wisc.edu/~wxp/goes16/multi_air_mass_rgb/fulldisk/latest_fulldisk_1.jpg"
+                },
+                "mesosector1": {
+                    13: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_1.jpg"
+                },
+                "mesosector2": {
+                    13: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_ircm/latest_meso_2.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_wvc/latest_meso_2.jpg",
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/grb/meso_vis_sqrt/latest_meso_2.jpg"
+                },
+                "tropicalatlantic": {
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/tropical_atlantic/latest_tropical_atlantic_1.jpg",
+                    22: "https://dustdevil.aos.wisc.edu/goes16/grb/rgb/tropical_atlantic/latest_tropical_atlantic_1.jpg"
+                },
+                "gomex": {
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/gulf/latest_gulf_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/gulf/latest_gulf_1.jpg",
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/gulf/latest_gulf_1.jpg"
+                },
+                "ne": {
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/ne/latest_ne_1.jpg",
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes16/ircm/ne/latest_ne_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes16/wvc/ne/latest_ne_1.jpg"
+                },
+                "fl": {
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes16/vis/fl/latest_fl_1.jpg"
+                },
+            # },  # close goes 16 dictionary
+            # "goes17": {
+                "pacus": {
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/vis/conus/latest_conus_1.jpg",
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/ircm/conus/latest_conus_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/conus/latest_conus_1.jpg",
+                    22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/conus/latest_conus_1.jpg"
+                },
+                "wc": {
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/vis/westcoast/latest_westcoast_1.jpg",
+                    22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/westcoast/latest_westcoast_1.jpg",
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/ircm/westcoast/latest_westcoast_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/westcoast/latest_westcoast_1.jpg"
+                },
+                "ak": {
+                    22: "https://dustdevil.aos.wisc.edu/goes17/grb/rgb/ak/latest_ak_1.jpg",
+                    14: "https://whirlwind.aos.wisc.edu/~wxp/goes17/irc13m/ak/latest_ak_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/wvc/ak/latest_ak_1.jpg"
+                },
+                "wmesosector2": {
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_vis/latest_meso_2.jpg",
+                    13: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_ircm/latest_meso_2.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_wvc/latest_meso_2.jpg"
+                },
+                "wmesosector": {
+                    2: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_vis/latest_meso_1.jpg",
+                    13: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_ircm/latest_meso_1.jpg",
+                    9: "https://whirlwind.aos.wisc.edu/~wxp/goes17/grb/meso_wvc/latest_meso_1.jpg"
+                } 
+            # }  # Close goes17 dictionary
+        }  # Close the main image_links dictionary
 
         # Retrieve the image URL
         image_url = image_links.get((region, product_code))
@@ -479,7 +492,8 @@ async def astro(ctx, location: str = None):
 
         await ctx.send(response)
         logging.info(f"User {ctx.author} requested astronomy information for {location}")
-    except (GeocoderTimedOut, AttributeError, ValueError) as e:
+    # except (GeocoderTimedOut, AttributeError, ValueError) as e:
+    except (AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving astronomy information: {e}")
         logging.error(f"Error retrieving astronomy information for {location}: {e}")
 
@@ -636,7 +650,7 @@ async def ascat(ctx, storm_id: str = None):
         # Download and send images
         for image_url in image_urls:
             image_filename = image_url.split('/')[-1]
-            urllib.request.urlretrieve(image_url, image_filename)
+            urllib3.request.urlretrieve(image_url, image_filename)
             await ctx.send(file=discord.File(image_filename))
 
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
@@ -854,7 +868,7 @@ async def lightning(ctx, icao: str, radius: int = 5):
         api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET'
 
         # 3. Fetch lightning data
-        request = urllib.request.urlopen(api_url)
+        request = urllib3.request.urlopen(api_url)
         response = request.read()
         data = json.loads(response)
         request.close()
