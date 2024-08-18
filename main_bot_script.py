@@ -240,7 +240,7 @@ async def skewt(ctx, station_code: str):
         sounding_url = f"https://weather.uwyo.edu/cgi-bin/sounding?region=naconf&TYPE=TEXT%3ALIST&YEAR=latest&MONTH=latest&FROM=0000&TO=2300&STNM={station_code}"
 
         # Fetch the sounding data
-        response = requests.get(sounding_url)
+        response = requests.get(sounding_url, verify=False)
         response.raise_for_status()
 
         # Parse the HTML to extract the sounding text
