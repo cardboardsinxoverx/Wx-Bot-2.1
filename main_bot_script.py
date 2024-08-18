@@ -38,11 +38,16 @@ import pandas as pd
 import geocoder
 import json
 import psutil
-# Load Configuration
 import config
 import signal
 import math
-import metpy 
+import metpy
+import requests_cache
+from openmeteo_py import Options,OWmanager
+from retry import retry
+import openmeteo_requests
+from openmeteo_py import Hourly, Options, Variable
+import airportsdata
 
 # def save_cache(cache_type, data):
 #     with open(f"{cache_type}_cache.json", "w") as f:
@@ -969,114 +974,121 @@ Fetches and displays current weather alerts for a specified location or the user
 
 *   `location` (optional): The location for which you want to retrieve alerts.  Provide a two-letter state abbreviation (e.g., 'MT' for Montana). If not provided, the bot will attempt to use the user's location based on their Discord profile.
 """
-	    
-# --- Models Command, under the command $weather ---
-# Setup the Open-Meteo API client with cache and retry on error
-# cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
-# retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-# openmeteo_py_py = openmeteo_py_requests.Client(session=retry_session)
 
-
+# --- Models Command --- 
 @bot.command()
-async def weather(ctx, location: str, *, variables: str = None):
-    """Fetches hourly weather data for a specified location from Open-Meteo."""
+async def models(ctx, model: str, icao: str, variable: str):
+    """Fetches ensemble model output for a specified airport, variable, and model."""
 
     try:
-        # 1. Get coordinates for the location (you might need to implement this)
-        latitude, longitude = get_coordinates(location)  # Implement this function
+        icao = icao.upper()
+        airport_data = airports.get(icao)
+        if not airport_data:
+            await ctx.send(f"Could not find airport with ICAO code {icao}.")
+            return
 
-        # 2. Define the list of weather variables to fetch
-        available_variables = [
-            "temperature_2m", "relative_humidity_2m", "dew_point_2m", 
-            "apparent_temperature", "precipitation_probability", "precipitation", 
-            "rain", "showers", "snowfall", "snow_depth", "weather_code", 
-            "pressure_msl", "surface_pressure", "cloud_cover", "cloud_cover_low", 
-            "cloud_cover_mid", "cloud_cover_high", "visibility", "evapotranspiration", 
-            "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", 
-            "wind_speed_80m", "wind_direction_10m", "wind_direction_80m", "wind_gusts_10m", 
-            "temperature_80m", "surface_temperature", "soil_temperature_0_to_10cm", 
-            "soil_temperature_10_to_40cm", "uv_index", "sunshine_duration", "cape", 
-            "lifted_index", "convective_inhibition", "freezing_level_height", 
-            "temperature_1000hPa", "temperature_925hPa", "temperature_850hPa", 
-            "temperature_700hPa", "temperature_500hPa", "temperature_300hPa", 
-            "dew_point_1000hPa", "dew_point_925hPa", "dew_point_800hPa", 
-            "dew_point_700hPa", "dew_point_500hPa", "dew_point_300hPa", 
-            "wind_speed_1000hPa", "wind_speed_925hPa", "wind_speed_850hPa", 
-            "wind_speed_700hPa", "wind_speed_500hPa", "wind_speed_300hPa", 
-            "wind_direction_1000hPa", "wind_direction_925hPa", "wind_direction_850hPa", 
-            "wind_direction_700hPa", "wind_direction_500hPa", "wind_direction_300hPa", 
-            "vertical_velocity_1000hPa", "vertical_velocity_925hPa", "vertical_velocity_850hPa", 
-            "vertical_velocity_700hPa", "vertical_velocity_500hPa", "vertical_velocity_300hPa", 
-            "geopotential_height_1000hPa", "geopotential_height_925hPa", "geopotential_height_850hPa", 
-            "geopotential_height_700hPa", "geopotential_height_500hPa", "geopotential_height_300hPa"
-        ]
+        latitude = airport_data['lat']
+        longitude = airport_data['lon']
 
-        if variables:
-            requested_variables = [var.strip() for var in variables.split(',')]
-            # Check if requested variables are valid
-            invalid_variables = [var for var in requested_variables if var not in available_variables]
-            if invalid_variables:
-                await ctx.send(f"Invalid variables: {', '.join(invalid_variables)}. Available variables: {', '.join(available_variables)}")
-                return
-        else:
-            # Default to some basic variables if none are specified
-            requested_variables = ["temperature_2m", "precipitation_probability", "wind_speed_10m"]
+        # Map 'rh' to 'relative_humidity_2m'
+        if variable == 'rh':
+            variable = 'relative_humidity_2m' # this parts going to be a pain in the ass, otherwise typing in the parameters is going to be a pain in the ass, but here's an example of what i want to do with setting a "variable" to a parameter. nobody wants to type et0_fao_evapotranspiration.
 
-        # 3. Fetch weather data
-        url = "https://api.open-meteo.com/v1/forecast"
+        # Available models
+        available_models = ["gfs025", "ecmwf_ifs025"]
+
+        if model.lower() not in available_models:
+            raise ValueError(f"Invalid model. Valid options are: {', '.join(available_models)}")
+
+        url = "https://ensemble-api.open-meteo.com/v1/ensemble"
         params = {
             "latitude": latitude,
             "longitude": longitude,
-            "hourly": requested_variables,
-            "wind_speed_unit": "kn",
-            "precipitation_unit": "inch",
-            "timezone": "America/New_York",  # Adjust timezone if needed
-            "past_hours": 6,
-            "forecast_hours": 12,
-            "models": ["gfs_seamless", "gfs_global", "gfs_hrrr", "gfs_graphcast025"]  # Adjust models if needed
+            "hourly": [
+                "temperature_2m", "relative_humidity_2m", "dew_point_2m", 
+                "apparent_temperature", "precipitation",   
+ "rain", "snowfall", "snow_depth", 
+                "pressure_msl", "surface_pressure", "cloud_cover", "visibility", 
+                "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", 
+                "wind_direction_10m", "wind_gusts_10m"
+            ],  # Include all variables you might need
+            "timezone": "America/New_York",
+            "models": model.lower()  # Use the specified model
         }
-        responses = openmeteo_py.weather_api(url, params=params)
+
+        responses = openmeteo.weather_api(url, params=params)
         response = responses[0]
 
-        # 4. Process hourly data
+        # Process hourly data
         hourly = response.Hourly()
+        hourly_variables = list(map(lambda i: hourly.Variables(i), range(0, hourly.VariablesLength())))   
+
+
+        # Filter based on variable and altitude (adjust if needed for other variables)
+        hourly_data_filter = filter(lambda x: x.Variable().name == variable and x.Altitude() == 2, hourly_variables)
+
         hourly_data = {"date": pd.date_range(
             start=pd.to_datetime(hourly.Time(), unit="s", utc=True),
             end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True),
             freq=pd.Timedelta(seconds=hourly.Interval()),
             inclusive="left"
         )}
-        for i, var_name in enumerate(requested_variables):
-            hourly_data[var_name] = hourly.Variables(i).ValuesAsNumpy()
+
+        # Process all members
+        for var in hourly_data_filter:
+            member = var.EnsembleMember()
+            hourly_data[f"{variable}_member{member}"] = var.ValuesAsNumpy()
 
         hourly_dataframe = pd.DataFrame(data=hourly_data)
 
-        # 5. Create and send embedded message (you'll likely want to customize this further)
-        embed = discord.Embed(title=f"Weather Forecast for {location}", color=discord.Color.blue())
-        for var_name in requested_variables:
-            embed.add_field(name=var_name, value=hourly_dataframe[var_name].to_string(index=False), inline=False)
+        # Create and send embedded message
+        embed = discord.Embed(title=f"{model.upper()} Model Output for {icao} ({variable})", color=discord.Color.blue())
+        for column in hourly_dataframe.columns:
+            if column != 'date':
+                embed.add_field(name=column, value=hourly_dataframe[column].to_string(index=False), inline=False)
 
         await ctx.send(embed=embed)
 
     except Exception as e:
-        await ctx.send(f"Error fetching weather data: {e}")
+        await ctx.send(f"Error fetching ensemble model data: {e}")
 
-def get_coordinates(location):
-    """Gets the latitude and longitude for a given location using Nominatim."""
+models.help = """
+**$models <model> <icao> <parameter>**
 
-    geolocator = Nominatim(user_agent="WeatherBot")  # Replace with your bot's name in "_"
-    location_obj = geolocator.geocode(location)
+Fetches ensemble model output for a specified airport and variable.
 
-    if location_obj:
-        return location_obj.latitude, location_obj.longitude
-    else:
-        return None
-# new
+**Arguments:**
 
-# need to implement this function to get airport coordinates so lightning command can work
-# def get_airport_coordinates(icao):
-#     # ... (future code here)
+*   `model`: The ensemble model to use. Valid options are: 'gfs025', 'ecmwf_ifs025'
+*   `icao`: The ICAO code of the airport (e.g., 'KJFK', 'KATL').
+*   `parameter`: The weather variable you want to see the model output for.  Currently supported parameters include:
+    *   `temp`:  2-meter temperature (in °C)
+    *   `rh`: 2-meter relative humidity (in %)
+    *   `dew_point_2m`: 2-meter dewpoint temperature (in °C)
+    *   `apparent_temperature`: Apparent temperature (in °C)
+    *   `precipitation`: Precipitation (in inches)
+    *   `rain`: Rain (in inches)
+    *   `snowfall`: Snowfall (in inches)
+    *   `snow_depth`: Snow depth (in inches)
+    *   `pressure_msl`: Mean sea level pressure (in hPa)
+    *   `surface_pressure`: Surface pressure (in hPa)
+    *   `cloud_cover`: Cloud cover (in %)
+    *   `visibility`: Visibility (in meters)
+    *   `et0_fao_evapotranspiration`: FAO Evapotranspiration (in mm)
+    *   `vapour_pressure_deficit`: Vapour pressure deficit (in hPa)
+    *   `wind_speed_10m`: Wind speed at 10 meters (in knots)
+    *   `wind_direction_10m`: Wind direction at 10 meters (in degrees)
+    *   `wind_gusts_10m`: Wind gusts at 10 meters (in knots)
 
+**Example:**
+
+*   `$models ecmwf kvpc rh` (to get ECMWF model output for relative humidity at KVPC)
+*   `$models gfs025 kjfk temp` (to get GFS model output for 2-meter temperature at KJFK)
+"""
+
+# revamped, not finished and probably wont work but whatever was in there before sucked. also what ens commented out was some cache nonsense so that way it wouldn't create another API request if you wanted the same product in a certain amount of time, which i guess who cares? lol
+
+# --- Lightning Command ---
 def distance(lat1, lon1, lat2, lon2):
     """
     Calculate the great circle distance between two points 
@@ -1099,7 +1111,6 @@ def distance(lat1, lon1, lat2, lon2):
     
     return distance
 
-# --- Lightning Command ---
 @bot.command()
 async def lightning(ctx, icao: str, radius: int = 5):
     """Checks for lightning strikes within a specified radius of an ICAO airport."""
