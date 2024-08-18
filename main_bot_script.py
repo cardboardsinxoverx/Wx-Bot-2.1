@@ -42,7 +42,7 @@ import psutil
 import config
 import signal
 import math
-# from math import radians, cos, sin, asin, sqrt
+import metpy 
 
 # def save_cache(cache_type, data):
 #     with open(f"{cache_type}_cache.json", "w") as f:
@@ -228,73 +228,116 @@ async def taf(ctx, airport_code: str):
             raise Exception(f"Error fetching TAF data for {airport_code}: {e}")
 # improvements in TAFs error handling, maybe we can figure out whats wrong.
 
-# --- Skew-T Command ---
+# --- SkewT Command --- 
 @bot.command()
 async def skewt(ctx, station_code: str):
-    """Fetches sounding data from NOAA's IGRA and generates a Skew-T diagram."""
+    """Fetches sounding data and generates a Skew-T diagram with various indices."""
 
     try:
         station_code = station_code.upper()
 
-        # 1. Get your NOAA API token from config.py or environment variables 
-        noaa_token = config.NOAA_API_TOKEN  # Or os.getenv('NOAA_API_TOKEN')
+	# Fetch and process the sounding data
+        ds = xr.Dataset.from_dataframe(WyomingUpperAir.request_data(format_date, station.strip('K')))
 
-        # 2. Construct the IGRA API URL 
-        igra_url = f"https://www.ncei.noaa.gov/cdo-web/api/v2/data?datasetid=igra2-data&stationid={station_code}&extent=latest"
+        # Get today's date in YYYY-MM-DD format
+        today = datetime.date.today().strftime("%Y-%m-%d")
 
-        # 3. Fetch the sounding data
-        headers = {'token': noaa_token}
-        response = requests.get(igra_url, headers=headers)
+        # Construct the URL 
+        sounding_url = f"https://weather.uwyo.edu/cgi-bin/sounding?region=naconf&STNM={station_code}&DATE={today}&HOUR=latest&ENV=std"
+
+        # Fetch the sounding data
+        response = requests.get(sounding_url, verify=False)
         response.raise_for_status()
 
-        # 4. Parse the JSON response
-        data = response.json()
+        # Parse the HTML to extract the sounding text
+        soup = BeautifulSoup(response.content, 'html.parser')
+        sounding_data = soup.find("pre").text.strip()
 
-        if not data['results']:
-            raise ValueError(f"No sounding data found for station {station_code}. Check if the station code is valid or if data is available.")
+        if not sounding_data:
+            raise ValueError("Sounding data not found.")
 
-        # Extract the latest sounding data
-        latest_sounding = data['results'][0]
-
-        # 5.  Construct sounding string in SHARPpy format from the JSON data
-        sounding_data = construct_sharppy_sounding(latest_sounding)
-
-        # 6. Generate the Skew-T diagram 
+        # Generate the Skew-T diagram using SHARPpy
         profile = sharppy.Profile.from_sounding(sounding_data)
-        fig = plt.figure(figsize=(8, 8))
-        skew.plot(profile)
 
-        # 7. Save the Skew-T diagram temporarily
+        # Calculate indices 
+        cape, cin = mpcalc.cape_cin(profile)
+        lcl_pressure, lcl_temperature = mpcalc.lcl(profile.pres[0], profile.tmpc[0], profile.dwpc[0])
+        lfc_pressure, lfc_temperature = mpcalc.lfc(profile.pres, profile.tmpc, profile.dwpc)
+        el_pressure, el_temperature = mpcalc.el(profile.pres, profile.tmpc, profile.dwpc)
+        lifted_index = mpcalc.lifted_index(profile.pres, profile.tmpc, profile.dwpc)
+        pwat = mpcalc.precipitable_water(profile.pres, profile.dwpc)
+        ccl_pressure, ccl_temperature = mpcalc.ccl(profile.pres, profile.tmpc, profile.dwpc)
+        ehi = mpcalc.energy_helicity_index(profile.pres, profile.u, profile.v, profile.hght)
+        zero_c_level = mpcalc.find_intersections(profile.pres, profile.tmpc, 0 * units.degC)[0]
+        theta_e = mpcalc.equivalent_potential_temperature(profile.pres, profile.tmpc, profile.dwpc)
+        k_index = mpcalc.k_index(profile.pres, profile.tmpc, profile.dwpc)
+        mpl_pressure, mpl_temperature = mpcalc.mpl(profile.pres, profile.tmpc, profile.dwpc)
+        max_temp = mpcalc.max_temperature(profile.pres, profile.tmpc, profile.dwpc)
+        positive_shear = mpcalc.bulk_shear(p, u, v, height=slice(0, 3000 * units.m))
+        srh = mpcalc.storm_relative_helicity(u, v, height, profile.storm_motion)
+        total_totals = mpcalc.total_totals_index(profile.tmpc, profile.dwpc, profile.u, profile.v)
+        # Assuming you have a function to calculate tropopause level 
+        tropopause_level = calculate_tropopause_level(profile)
+
+        # Calculate wet-bulb temperature
+        wet_bulb = mpcalc.wet_bulb_temperature(profile.pres, profile.tmpc, profile.dwpc)
+
+        # Create the Skew-T plot
+        fig = plt.figure(figsize=(8, 8))
+        skew = SkewT(fig)
+
+        # Pls plot
+        skew.plot(p, T, 'r')  # Temperature in red
+        skew.plot(p, Td, 'g')  # Dewpoint in green
+        skew.plot(p, wet_bulb, 'b', linestyle='--')  # Wet-bulb temperature in dashed blue
+        skew.plot_barbs(p[ix], u[ix], v[ix])  # Wind barbs 
+
+        # mush indices on skewT
+        plt.title(f'{station} {today} {profile.time[0].hour:02d}Z', weight='bold', size=20)
+        skew.ax.text(0.7, 0.1, f'CAPE: {cape.to("J/kg"):.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.05, f'CIN: {cin.to("J/kg"):.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.15, f'LIFTED INDEX: {lifted_index:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.2, f'LCL: {lcl_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.25, f'LFC: {lfc_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.3, f'EL: {el_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.35, f'CCL: {ccl_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.4, f'EHI: {ehi:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.45, f'0C Level: {zero_c_level[0].to("hPa"):.0f} hPa, {zero_c_level[1].to("degC"):.0f} °C', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.5, f'PWAT: {pwat.to("inch"):.2f} in', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.55, f'K index: {k_index:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.6, f'MPL: {mpl_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.65, f'Max Temp: {max_temp.to("degC"):.0f} °C', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.7, f'0-3km Shear: {positive_shear[0].to("knots"):.0f} kts', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.75, f'SRH: {srh[0].to("m^2/s^2"):.0f} m^2/s^2', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.8, f'Total Totals: {total_totals:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.85, f'Tropopause: {tropopause_level}', transform=skew.ax.transAxes) 
+
+	# set units for variables
+	height = ds.height * units.meter
+
+	# add hodograph
+        ax_hod = inset_axes(skew.ax, '25%', '20%', loc='upper left')
+        h = Hodograph(ax_hod, component_range=80)  # Change range in windspeeds
+        h.add_grid(increment=10)
+        try:
+            h.plot_colormapped(u, v, height)   
+ 	# height needs to be defined, idk if its not
+        except ValueError as e:
+            print(e) 
+
+        # Save the Skew-T diagram temporarily
         temp_image_path = f"skewt_{station_code}_observed.png"
         plt.savefig(temp_image_path, format='png')
         plt.close(fig)
 
-        # 8. Send the image
+        # Send the Skew-T diagram as a Discord file
         await ctx.send(file=discord.File(temp_image_path))
 
-        # 9. Clean up
+        # delete the temporary image file
         os.remove(temp_image_path)
 
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
-
-# Helper function to construct SHARPpy sounding string from IGRA JSON data
-def construct_sharppy_sounding(sounding_data):
-    # Extract relevant data, assuming these keys exist in the JSON
-    pressure = [level['pressure'] for level in sounding_data['data'] if 'pressure' in level]
-    temperature = [level['temperature'] for level in sounding_data['data'] if 'temperature' in level]
-    dewpoint = [level['dewpoint'] for level in sounding_data['data'] if 'dewpoint' in level]
-    wind_speed = [level['windSpeed'] for level in sounding_data['data'] if 'windSpeed' in level]
-    wind_direction = [level['windDirection'] for level in sounding_data['data'] if 'windDirection' in level]
-
-    # Format data into SHARPpy sounding string (might need adjustments)
-    sounding_string = "%TITLE%\n"
-    sounding_string += "%RAW%\n"
-    for p, t, dp, ws, wd in zip(pressure, temperature, dewpoint, wind_speed, wind_direction):
-        sounding_string += f"{p:7.2f},{t:7.2f},{dp:7.2f},{ws:5.1f},{wd:5.1f}\n"
-    sounding_string += "%END%"
-
-    return sounding_string
 	    
 # --- Satellite Command ---
 @bot.command()
