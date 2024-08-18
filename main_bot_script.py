@@ -266,7 +266,7 @@ async def sat(ctx, region: str, product_code: int):
 
     try:
         region = region.lower()
-        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne"]
+        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "indian", "capeverde", "neatl"]
 
         if region not in valid_regions:
             raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
