@@ -242,8 +242,18 @@ async def taf(ctx, airport_code: str):
         await ctx.send(f"Error parsing TAF data for {airport_code}: {e}")
         logging.error(f"Error parsing TAF data for {airport_code}: {e}")
 
-'''more error handling fixes and put in logging info, also edited code to see if json data even exists before accessing it, but I'm tired of trying to fix the actual problem and the error handling problem at the same time.
-i think simply fixing the error handling after this try is the best way forward, at least then it can tell you whats wrong. so yeah last stab at fixing the actual problem in TAF command - ln'''
+taf.help = """
+**$taf <airport_code>**
+
+Fetches the latest TAF (terminal aerodrome forecast) for the specified airport.
+
+**Arguments:**
+
+*   `airport_code`: The ICAO code of the airport (e.g., 'KJFK', 'KATL').
+"""
+
+# more error handling fixes and put in logging info, also edited code to see if json data even exists before accessing it, but I'm tired of trying to fix the actual problem and the error handling problem at the same time.
+# i think simply fixing the error handling after this try is the best way forward, at least then it can tell you whats wrong. so yeah last stab at fixing the actual problem in TAF command - ln
 
 # --- SkewT Command --- 
 @bot.command()
@@ -510,6 +520,98 @@ async def sat(ctx, region: str, product_code: int):
     except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError, OSError) as e:
         await ctx.send(f"Error retrieving/parsing/sending satellite imagery: {e}")
 
+sat.help = """
+**$sat <region> <product_code>**
+
+Fetches a satellite image for the specified region and product code.
+
+**Arguments:**
+
+*   `region`: The geographic region. Valid options are:
+
+    *   `conus`: Continental US (GOES-16)
+    *   `fulldisk`: Full Earth disk (GOES-16)
+    *   `mesosector1`, `mesosector2`: GOES-16 mesoscale sectors
+    *   `tropicalatlantic`: Tropical Atlantic region (GOES-16)
+    *   `gomex`: Gulf of Mexico (GOES-16)
+    *   `ne`: Northeast US (GOES-16)
+    *   `indian`: Indian Ocean (EUMETSAT)
+    *   `capeverde`: Cape Verde region (EUMETSAT)
+    *   `neatl`: Northeast Atlantic (EUMETSAT)
+    *   `fl`: Florida (GOES-16)
+    *   `pacus`: Pacific US (GOES-17)
+    *   `wc`: West Coast US (GOES-17)
+    *   `ak`: Alaska (GOES-17)
+    *   `wmesosector`, `wmesosector2`: GOES-17 mesoscale sectors
+
+*   `product_code`: The code representing the desired satellite product.
+
+    **Available product codes for each region:**
+
+    *   **CONUS:**
+        *   `1`: GeoColor (True Color)
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `14`: Clean Longwave Infrared Window
+        *   `22`: RGB
+
+    *   **Full Disk:**
+        *   `1`: GeoColor (True Color)
+        *   `2`: Red Visible
+        *   `5`: RGB Air Mass
+        *   `9`: Mid-level Water Vapor
+        *   `13`: Clean Longwave Infrared Window
+
+    *   **Mesosector1 & Mesosector2:**
+        *   `1`: GeoColor (True Color)
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `13`: Clean Longwave Infrared Window
+
+    *   **Tropical Atlantic:**
+        *   `1`: GeoColor (True Color)
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `14`: Clean Longwave Infrared Window
+        *   `22`: RGB
+
+    *   **GOMEX & NE:**
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `14`: Clean Longwave Infrared Window
+
+    *   **FL:**
+        *   `2`: Red Visible
+
+    *   **PACUS, WC, & AK:**
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `14`: Clean Longwave Infrared Window
+        *   `22`: RGB
+
+    *   **WMesosector & WMesosector2:**
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `13`: Clean Longwave Infrared Window
+
+    *   **Indian:**
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `14`: Clean Longwave Infrared Window
+
+    *   **Cape Verde:**
+        *   `2`: Red Visible
+        *   `14`: Clean Longwave Infrared Window
+
+    *   **NEATL:**
+        *   `2`: Red Visible
+        *   `9`: Mid-level Water Vapor
+        *   `14`: Clean Longwave Infrared Window
+
+**Example:**
+
+*   `$sat conus 14` (Clean Longwave Infrared Window for CONUS)
+"""
 # updated links and dictionary format 18AUG2024
 		
 # --- Astronomy Command ---
@@ -581,6 +683,16 @@ async def astro(ctx, location: str = None):
         await ctx.send(f"Error retrieving astronomy information: {e}")
         logging.error(f"Error retrieving astronomy information for {location}: {e}")
 
+astro.help = """
+**$astro [location]**
+
+Provides sunrise, sunset, moon phase, and twilight information for a given location.
+
+**Arguments:**
+
+*   `location` (optional): The location for which you want to retrieve astronomy information.  You can provide a city name, airport code (ICAO), or other recognizable location. 
+"""
+
 # --- Radar Command ---
 @bot.command()
 async def radar(ctx, region: str = "chase", overlay: str = "base"):
@@ -637,6 +749,17 @@ async def radar(ctx, region: str = "chase", overlay: str = "base"):
 
     except (requests.exceptions.RequestException, ValueError) as e:
         await ctx.send(f"Error retrieving radar image: {e}")
+
+radar.help = """
+**$radar [region] [overlay]**
+
+Displays a radar image link for the specified region and overlay type.
+
+**Arguments:**
+
+*   <region>: The geographic region (default: 'plains'). Valid options are: 'plains', 'ne', 'se', 'sw', 'nw'.
+*   <overlay>: The type of overlay on the radar image (default: 'base'). Valid options are: 'base', 'totals', no input defaults to 'base'.
+"""
 	    
 # --- overlay that wont work ---
 def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png", zoom=0.1):
@@ -757,6 +880,16 @@ def extract_image_urls(soup):
     base_url = "https://www.fnmoc.navy.mil" 
     return [base_url + img['src'] for img in image_tags]
 
+ascat.help = """
+**$ascat [storm_id]**
+
+Fetches ASCAT (Advanced Scatterometer) images for the specified storm from the Fleet Numerical Meteorology and Oceanography Center (FNMOC).
+
+**Arguments:**
+
+*   `storm_id` (optional): The ID of the storm (e.g., '05L'). If not provided, the bot will list currently active storms.
+"""
+
 # --- Alerts Command ---
 # state abbreviations turnt into Federal Information Processing Standards
 state_abbreviations_to_fips = {
@@ -828,6 +961,14 @@ async def alerts(ctx, location: str = None):
         await ctx.send(f"Error parsing alert data: {e}")
     except KeyError as e:
         await ctx.send(f"Unexpected data format in alerts response. Missing key: {e}")
+
+alerts.help = """
+Fetches and displays current weather alerts for a specified location or the user's location.
+
+**Arguments:**
+
+*   `location` (optional): The location for which you want to retrieve alerts.  Provide a two-letter state abbreviation (e.g., 'MT' for Montana). If not provided, the bot will attempt to use the user's location based on their Discord profile.
+"""
 	    
 # --- Models Command, under the command $weather ---
 # Setup the Open-Meteo API client with cache and retry on error
@@ -1001,12 +1142,33 @@ async def lightning(ctx, icao: str, radius: int = 5):
     except Exception as e:
         await ctx.send(f"Error checking for lightning: {e}")
 
+lightning.help = """
+**$lightning <icao> [radius]**
+
+Checks for lightning strikes within a specified radius of an ICAO airport.
+
+**Arguments:**
+
+*   `icao`: The ICAO code of the airport (e.g., 'KJFK', 'KATL').
+*   `radius` (optional): The radius (in miles) within which to check for lightning strikes (default: 5 miles).
+"""
+
 # --- Webcam Command --- 
 @bot.command()
 async def webcam(ctx, location: str):
     """Displays a weather webcam image for a specified location."""
 
     await ctx.send("This feature is not yet implemented. Stay tuned for updates!")
+
+webcam.help = """
+**$webcam <location>**
+
+*(Not yet implemented)*  Intended to display a weather webcam image for a specified location.
+
+**Arguments:**
+
+*   `location`: The location for which you want to view a webcam image. 
+"""
 
     # i got it written idk if it'll break the bot or not, im not comfortable with this command
 
