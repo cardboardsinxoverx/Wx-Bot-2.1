@@ -193,13 +193,17 @@ async def taf(ctx, airport_code: str):
 
         # 2. Construct URL (adjust based on ADDS API changes)
         taf_url = f'https://aviationweather.gov/api/data/taf?ids={airport_code}&format=json'
+	logging.info(f"Constructed TAF URL: {taf_url}")
+
 
         # 3. Fetch Data
         response = requests.get(taf_url)
         response.raise_for_status()  # Raise an exception for HTTP errors
+	logging.info(f"Fetched TAF data for {airport_code}")
 
         # 4. Parse TAF
         json_data = json.loads(response.content)
+	logging.info(f"Parsed TAF JSON data for {airport_code}")
 
         # Check if any TAF data was found at all
         if not json_data:
@@ -212,6 +216,13 @@ async def taf(ctx, airport_code: str):
         if not taf_data or not taf_time:
             raise ValueError("TAF data or issue time not found.")
 
+       # Extract the latest TAF 
+        if 'rawText' in json_data[0] and 'issueTime' in json_data[0]:
+            taf_data = json_data[0]['rawText']
+            taf_time = json_data[0]['issueTime']
+        else:
+            raise KeyError("TAF data or issue time not found in the response.")
+
         # 5. Prepare and Send Response
         embed = discord.Embed(title=f"TAF for {airport_code}", description=taf_data)
         embed.set_footer(text=f"Issue Time: {taf_time}Z")
@@ -223,10 +234,16 @@ async def taf(ctx, airport_code: str):
     except requests.exceptions.RequestException as e:
         # Handle network errors during fetching, including ConnectionError
         if isinstance(e, requests.exceptions.ConnectionError) and "Failed to resolve" in str(e):
-            raise Exception(f"Unable to connect to aviationweather.gov. Check your internet connection or DNS settings.")
+            await ctx.send(f"Unable to connect to aviationweather.gov. Check your internet connection or DNS settings.")
         else:
-            raise Exception(f"Error fetching TAF data for {airport_code}: {e}")
-# improvements in TAFs error handling, maybe we can figure out whats wrong.
+            await ctx.send(f"Error fetching TAF data for {airport_code}: {e}")
+        logging.error(f"Error fetching TAF data for {airport_code}: {e}")
+    except (KeyError, ValueError) as e: 
+        await ctx.send(f"Error parsing TAF data for {airport_code}: {e}")
+        logging.error(f"Error parsing TAF data for {airport_code}: {e}")
+
+'''more error handling fixes and put in logging info, also edited code to see if json data even exists before accessing it, but I'm tired of trying to fix the actual problem and the error handling problem at the same time.
+i think simply fixing the error handling after this try is the best way forward, at least then it can tell you whats wrong. so yeah last stab at fixing the actual problem in TAF command - ln'''
 
 # --- SkewT Command --- 
 @bot.command()
