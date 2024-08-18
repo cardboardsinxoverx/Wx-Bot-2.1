@@ -266,12 +266,12 @@ async def sat(ctx, region: str, product_code: int):
 
     try:
         region = region.lower()
-        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "fl", "pacus", "wc", "ak", "wmesosector", "wmesosector2"]  
+        valid_regions = ["conus", "fulldisk", "mesosector1", "mesosector2", "tropicalatlantic", "gomex", "ne", "indian", "capeverde", "neatl"]
 
         if region not in valid_regions:
             raise ValueError(f"Invalid region. Valid options are: {', '.join(valid_regions)}")
 
-        # Product codes for different regions (updated with new regions and product codes)
+        # Product codes for different regions
         product_codes = {
             "conus": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
             "fulldisk": {1: "GeoColor (True Color)", 2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", "airmass": "RGB Air Mass"}, 
@@ -280,15 +280,6 @@ async def sat(ctx, region: str, product_code: int):
             "tropicalatlantic": {1: "GeoColor (True Color)", 2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
             "gomex": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
             "ne": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "fl": {2: "Red Visible"},
-            "pacus": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
-            "wc": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor", 22: "RGB"},
-            "ak": {9: "Mid-level Water Vapor", 14: "Clean Longwave Infrared Window", 22: "RGB"},
-            "wmesosector": {2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "wmesosector2": {2: "Red Visible", 13: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "indian": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"},
-            "capeverde": {2: "Red Visible", 14: "Clean Longwave Infrared Window"},
-            "neatl": {2: "Red Visible", 14: "Clean Longwave Infrared Window", 9: "Mid-level Water Vapor"}
         }
 
         # Error handling for invalid product code
@@ -403,11 +394,12 @@ async def sat(ctx, region: str, product_code: int):
 
             # Send the stamped image as a Discord file
             await ctx.send(file=discord.File(temp_image_path, filename="sat.gif"))
+
         else:
             raise KeyError(f"No image link found for region '{region}' and product code {product_code}")
 
     except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
-        print(f"Error retrieving/parsing satellite imagery: {e}")
+        print(f"Error retrieving/parsing satellite imagery: {e}"
 
 # updated links and dictionary format 18AUG2024
 		
