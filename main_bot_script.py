@@ -10,7 +10,7 @@ import discord
 from discord.ext import commands
 import requests
 import urllib3
-import openmeteo
+import openmeteo_py
 import datetime
 import pytz
 from bs4 import BeautifulSoup  # Instead of 'import BeautifulSoup'
@@ -727,7 +727,7 @@ async def alerts(ctx, location: str = None):
 # Setup the Open-Meteo API client with cache and retry on error
 # cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
 # retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-# openmeteo = openmeteo_requests.Client(session=retry_session)
+# openmeteo_py_py = openmeteo_py_requests.Client(session=retry_session)
 
 
 @bot.command()
@@ -788,7 +788,7 @@ async def weather(ctx, location: str, *, variables: str = None):
             "forecast_hours": 12,
             "models": ["gfs_seamless", "gfs_global", "gfs_hrrr", "gfs_graphcast025"]  # Adjust models if needed
         }
-        responses = openmeteo.weather_api(url, params=params)
+        responses = openmeteo_py.weather_api(url, params=params)
         response = responses[0]
 
         # 4. Process hourly data
