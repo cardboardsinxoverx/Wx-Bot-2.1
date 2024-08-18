@@ -699,10 +699,11 @@ async def ascat(ctx, storm_id: str = None):
     """Fetches ASCAT images for the specified storm from FNMOC. If no storm_id is provided, it will list the active storms."""
 
     try:
-        # Fetch the main FNMOC TCWEB page
-        base_url = "https://www.fnmoc.navy.mil/tcweb/cgi-bin/tc_home.cgi"
-        response = requests.get(base_url)
-        response.raise_for_status()
+        # Fetch the main FNMOC TCWEB page 
+        base_url = "https://www.fnmoc.navy.mil/tcweb/cgi-bin/tc_home.cgi"  
+        response = requests.get(base_url, verify=False)  # Disable SSL verification
+        response.raise_for_status()  # Still raise exceptions for other HTTP errors
+
 
         # Parse the HTML to find active storms
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -723,8 +724,8 @@ async def ascat(ctx, storm_id: str = None):
         # Construct the URL for the storm's ASCAT image page (adjust as needed)
         storm_url = f"{base_url}?YEAR=2024&MO=Aug&BASIN=ATL&STORM_NAME={storm_id}&SENSOR=&PHOT=yes&ARCHIVE=Mosaic&NAV=tc&DISPLAY=all&MOSAIC_SCALE=20%&STYLE=table&ACTIVES={','.join(active_storms)}&TYPE=ascat&CURRENT=LATEST.jpg&PROD=hires&DIR=/tcweb/dynamic/products/tc24/ATL/{storm_id}/ascat/hires&file_cnt=160"
 
-        # Fetch the storm's ASCAT image page
-        response = requests.get(storm_url)
+         # Fetch the storm's ASCAT image page 
+        response = requests.get(storm_url, verify=False)  # Disable SSL verification
         response.raise_for_status()
 
         # Parse the HTML to extract image URLs
