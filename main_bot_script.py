@@ -399,7 +399,7 @@ async def sat(ctx, region: str, product_code: int):
             raise KeyError(f"No image link found for region '{region}' and product code {product_code}")
 
     except (requests.exceptions.RequestException, AttributeError, ValueError, KeyError) as e:
-        print(f"Error retrieving/parsing satellite imagery: {e}"
+        print(f"Error retrieving/parsing satellite imagery: {e}")
 
 # updated links and dictionary format 18AUG2024
 		
