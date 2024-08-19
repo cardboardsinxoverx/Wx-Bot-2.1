@@ -1022,7 +1022,7 @@ async def models(ctx, model_type: str, icao: str, variable: str):
             'clouds': 'cloud_cover',
             'vis': 'visibility',
             'et': 'et0_fao_evapotranspiration',
-            'vpd': 'vapour_pressure_deficit',
+            'vpd': 'vapor_pressure_deficit',
             'ws': 'wind_speed_10m',
             'wd': 'wind_direction_10m',
             'gusts': 'wind_gusts_10m'
@@ -1056,7 +1056,7 @@ async def models(ctx, model_type: str, icao: str, variable: str):
                 "temperature_2m", "relative_humidity_2m", "dew_point_2m", 
                 "apparent_temperature", "precipitation", "rain", "snowfall", "snow_depth", 
                 "pressure_msl", "surface_pressure", "cloud_cover", "visibility", 
-                "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", 
+                "et0_fao_evapotranspiration", "vapor_pressure_deficit", "wind_speed_10m", 
                 "wind_direction_10m", "wind_gusts_10m"
             ],
             "timezone": "America/New_York",
