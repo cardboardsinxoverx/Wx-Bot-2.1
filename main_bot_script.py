@@ -194,6 +194,22 @@ def get_metar(icao, hoursback=0, format='json'):
         # Handle potential parsing errors
         raise Exception(f"Error parsing METAR data for {icao}: {e}")
 
+#def get_metar(icao, hoursback=0, format='json'):
+  #  try:
+
+     #   metar_observations = [data['rawText'] for data in json_data if 'rawText' in data]
+
+     #   if not metar_observations:
+      #      raise ValueError("No METAR observations found within the specified time range.")
+
+     #   return metar_observations  # Return a list of METAR observations
+
+  #  except requests.exceptions.RequestException as e:
+        # Handle network errors during fetching
+   #     raise Exception(f"Error fetching METAR data for {icao}: {e}")
+ #   except (KeyError, ValueError) as e:
+        # Handle potential parsing errors
+  #      raise Exception(f"Error parsing METAR data for {icao}: {e}")
 
 @bot.command()
 async def metar(ctx, airport_code: str):
@@ -205,6 +221,22 @@ async def metar(ctx, airport_code: str):
     await ctx.send(embed=embed)
     logging.info(f"User {ctx.author} requested METAR for {airport_code}")
 
+#@bot.command()
+#async def metar(ctx, airport_code: str, hoursback: int = 0): 
+   # """Sends latest metar or multiple past METARs for given airport"""
+   # airport_code = airport_code.upper()
+   # raw_metars = get_metar(airport_code, hoursback)  
+
+    # Handle multiple METARs
+   # if hoursback > 0:
+     #   for raw_metar in raw_metars:
+      #      await ctx.send(f"`\n{raw_metar}\n`")
+   # else:
+    ##   await ctx.send(f"`\n{raw_metars[0]}\n`")  # Only the latest METAR
+
+   # logging.info(f"User {ctx.author} requested METAR for {airport_code}
+
+# what i have commented out is yet another attempt to pull more than one ob, i excluded the embed part and placed the text within ```these things```. -ln
 
 @bot.command()
 async def taf(ctx, airport_code: str):
