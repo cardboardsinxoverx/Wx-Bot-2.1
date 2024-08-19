@@ -66,9 +66,11 @@ import airportsdata
 # alert_cache = {}
 
 # # Load Cache Data on Startup
-# metar_cache = load_cache("metar")  # keep getting and error with this line sometimes ohh
-# taf_cache = load_cache("taf") # guess maybe this one too
-# alert_cache = load_cache("alert") # this is gay
+# metar_cache = load_cache("metar")  
+# taf_cache = load_cache("taf") 
+# alert_cache = load_cache("alert") 
+# ^^^ that stuff up there is really only relevant if we were to disseminate this to the public. Imagine if hundreds of discords used this bot, pulling API requests. I mean, its not OUR internet (i guess?) but.. i think for stuff like the model command, which is really data heavy, it might be
+# a good idea to implement the cache function back into the bot. So I wouldn't call it errenous AI bullshit, it just doesn't fit our needs at the moment. It's a lovely idea however.
 
 # Initialize the bot
 intents = discord.Intents.default()
@@ -994,11 +996,12 @@ Fetches and displays current weather alerts for a specified location or the user
 
 *   `location` (optional): The location for which you want to retrieve alerts.  Provide a two-letter state abbreviation (e.g., 'MT' for Montana). If not provided, the bot will attempt to use the user's location based on their Discord profile.
 """
+# this was tested without bot.command() function, it works.
 
 # --- Models Command --- 
 @bot.command()
-async def models(ctx, model: str, icao: str, variable: str):
-    """Fetches ensemble model output for a specified airport, variable, and model."""
+async def models(ctx, model_type: str, icao: str, variable: str):
+    """Fetches model output for a specified airport, variable, and model type (deterministic or ensemble)."""
 
     try:
         icao = icao.upper()
@@ -1010,39 +1013,62 @@ async def models(ctx, model: str, icao: str, variable: str):
         latitude = airport_data['lat']
         longitude = airport_data['lon']
 
-        # Map 'rh' to 'relative_humidity_2m'
+        # Map shorthand parameters to things nobody wants to type
         if variable == 'rh':
-            variable = 'relative_humidity_2m' # this parts going to be a pain in the ass, otherwise typing in the parameters is going to be a pain in the ass, but here's an example of what i want to do with setting a "variable" to a parameter. nobody wants to type et0_fao_evapotranspiration.
+            variable = 'relative_humidity_2m' #this needs to be expanded. absolutely zero people want to type something like et0_fao_evapotranspiration for their parameter. 
+	if variable == 'temp':
+	    variable = 'temperature_2m'
+	if variable == 'dp':
+	    variable = 'dew_point_2m'
+	if variable == 'feelslike'
+	    variable = 'apparent_temperature'
 
         # Available models
-        available_models = ["gfs025", "ecmwf_ifs025"]
+        available_deterministic_models = ["gfs_hrrr", "gfs_graphcast025"]
+        available_ensemble_models = ["gfs025", "ecmwf_ifs025"]
 
-        if model.lower() not in available_models:
-            raise ValueError(f"Invalid model. Valid options are: {', '.join(available_models)}")
+        # Check model type and validity
+        if model_type.lower() == 'det':
+            if model.lower() not in available_deterministic_models:
+                raise ValueError(f"Invalid deterministic model. Valid options are: {', '.join(available_deterministic_models)}")
+            url = "https://api.open-meteo.com/v1/forecast"  # Deterministic API URL
+        elif model_type.lower() == 'ens':
+            if model.lower() not in available_ensemble_models:
+                raise ValueError(f"Invalid ensemble model. Valid options are: {', '.join(available_ensemble_models)}")
+            url = "https://ensemble-api.open-meteo.com/v1/ensemble"  # Ensemble API URL
+        else:
+            raise ValueError("Invalid model type. Please specify 'det' for deterministic or 'ens' for ensemble.")
 
-        url = "https://ensemble-api.open-meteo.com/v1/ensemble"
+        # Common parameters 
         params = {
             "latitude": latitude,
             "longitude": longitude,
             "hourly": [
                 "temperature_2m", "relative_humidity_2m", "dew_point_2m", 
-                "apparent_temperature", "precipitation",   
- "rain", "snowfall", "snow_depth", 
+                "apparent_temperature", "precipitation", "rain", "snowfall", "snow_depth", 
                 "pressure_msl", "surface_pressure", "cloud_cover", "visibility", 
                 "et0_fao_evapotranspiration", "vapour_pressure_deficit", "wind_speed_10m", 
                 "wind_direction_10m", "wind_gusts_10m"
-            ],  # Include all variables you might need
+            ],
             "timezone": "America/New_York",
-            "models": model.lower()  # Use the specified model
+            "wind_speed_unit": "kn",
+            "precipitation_unit": "inch"
         }
 
+        # Model-specific parameters
+        if model_type.lower() == 'det':
+            params["models"] = model.lower()
+            params["forecast_hours"] = 168
+        else:  # Ensemble
+            params["models"] = model.lower()
+
+        # Fetch data
         responses = openmeteo.weather_api(url, params=params)
         response = responses[0]
 
-        # Process hourly data
+        # Process hourly data (adjust based on model type if needed)
         hourly = response.Hourly()
-        hourly_variables = list(map(lambda i: hourly.Variables(i), range(0, hourly.VariablesLength())))   
-
+        hourly_variables = list(map(lambda i: hourly.Variables(i), range(0, hourly.VariablesLength())))
 
         # Filter based on variable and altitude (adjust if needed for other variables)
         hourly_data_filter = filter(lambda x: x.Variable().name == variable and x.Altitude() == 2, hourly_variables)
@@ -1054,15 +1080,20 @@ async def models(ctx, model: str, icao: str, variable: str):
             inclusive="left"
         )}
 
-        # Process all members
-        for var in hourly_data_filter:
-            member = var.EnsembleMember()
-            hourly_data[f"{variable}_member{member}"] = var.ValuesAsNumpy()
+        # Process all members (for ensemble models)
+        if model_type.lower() == 'ens':
+            for var in hourly_data_filter:
+                member = var.EnsembleMember()
+                hourly_data[f"{variable}_member{member}"] = var.ValuesAsNumpy()
+        else:  # Deterministic model
+            for var in hourly_data_filter:
+                hourly_data[variable] = var.ValuesAsNumpy()
 
         hourly_dataframe = pd.DataFrame(data=hourly_data)
 
         # Create and send embedded message
-        embed = discord.Embed(title=f"{model.upper()} Model Output for {icao} ({variable})", color=discord.Color.blue())
+        model_type_str = "Deterministic" if model_type.lower() == 'det' else "Ensemble"
+        embed = discord.Embed(title=f"{model_type_str} {model.upper()} Model Output for {icao} ({variable})", color=discord.Color.blue())
         for column in hourly_dataframe.columns:
             if column != 'date':
                 embed.add_field(name=column, value=hourly_dataframe[column].to_string(index=False), inline=False)
@@ -1070,7 +1101,7 @@ async def models(ctx, model: str, icao: str, variable: str):
         await ctx.send(embed=embed)
 
     except Exception as e:
-        await ctx.send(f"Error fetching ensemble model data: {e}")
+        await ctx.send(f"Error fetching model data: {e}")
 
 models.help = """
 **$models <model> <icao> <parameter>**
@@ -1084,8 +1115,8 @@ Fetches ensemble model output for a specified airport and variable.
 *   `parameter`: The weather variable you want to see the model output for.  Currently supported parameters include:
     *   `temp`:  2-meter temperature (in °C)
     *   `rh`: 2-meter relative humidity (in %)
-    *   `dew_point_2m`: 2-meter dewpoint temperature (in °C)
-    *   `apparent_temperature`: Apparent temperature (in °C)
+    *   `dp`: 2-meter dewpoint temperature (in °C)
+    *   `feelslike`: Apparent temperature (in °C)
     *   `precipitation`: Precipitation (in inches)
     *   `rain`: Rain (in inches)
     *   `snowfall`: Snowfall (in inches)
