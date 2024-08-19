@@ -1007,15 +1007,30 @@ async def models(ctx, model_type: str, icao: str, variable: str):
         latitude = airport_data['lat']
         longitude = airport_data['lon']
 
-        # Map shorthand parameters to things nobody wants to type
-        if variable == 'rh':
-            variable = 'relative_humidity_2m' #this needs to be expanded. absolutely zero people want to type something like et0_fao_evapotranspiration for their parameter. 
-        if variable == 'temp':
-            variable = 'temperature_2m'
-        if variable == 'dp':
-            variable = 'dew_point_2m'
-        if variable == 'feelslike': # Corrected line with colon
-            variable = 'apparent_temperature'
+       # Map shorthand parameters 
+        shorthand_map = {
+            'rh': 'relative_humidity_2m',
+            'temp': 'temperature_2m',
+            'dp': 'dew_point_2m',
+            'feelslike': 'apparent_temperature',
+            'precip': 'precipitation',
+            'rain': 'rain',
+            'snow': 'snowfall',
+            'snowdepth': 'snow_depth',
+            'mslp': 'pressure_msl',
+            'sp': 'surface_pressure',
+            'clouds': 'cloud_cover',
+            'vis': 'visibility',
+            'et': 'et0_fao_evapotranspiration',
+            'vpd': 'vapour_pressure_deficit',
+            'ws': 'wind_speed_10m',
+            'wd': 'wind_direction_10m',
+            'gusts': 'wind_gusts_10m'
+        }
+
+        if variable.lower() in shorthand_map:
+            variable = shorthand_map[variable.lower()]
+	
 
         # Available models
         available_deterministic_models = ["gfs_hrrr", "gfs_graphcast025"]
@@ -1111,19 +1126,19 @@ Fetches ensemble model output for a specified airport and variable.
     *   `rh`: 2-meter relative humidity (in %)
     *   `dp`: 2-meter dewpoint temperature (in °C)
     *   `feelslike`: Apparent temperature (in °C)
-    *   `precipitation`: Precipitation (in inches)
+    *   `precip`: Precipitation (in inches)
     *   `rain`: Rain (in inches)
-    *   `snowfall`: Snowfall (in inches)
-    *   `snow_depth`: Snow depth (in inches)
-    *   `pressure_msl`: Mean sea level pressure (in hPa)
-    *   `surface_pressure`: Surface pressure (in hPa)
-    *   `cloud_cover`: Cloud cover (in %)
-    *   `visibility`: Visibility (in meters)
-    *   `et0_fao_evapotranspiration`: FAO Evapotranspiration (in mm)
-    *   `vapour_pressure_deficit`: Vapour pressure deficit (in hPa)
-    *   `wind_speed_10m`: Wind speed at 10 meters (in knots)
-    *   `wind_direction_10m`: Wind direction at 10 meters (in degrees)
-    *   `wind_gusts_10m`: Wind gusts at 10 meters (in knots)
+    *   `snow`: Snowfall (in inches)
+    *   `snowdepth`: Snow depth (in inches)
+    *   `mslp`: Mean sea level pressure (in hPa)
+    *   `sp`: Surface pressure (in hPa)
+    *   `clouds`: Cloud cover (in %)
+    *   `vis`: Visibility (in meters)
+    *   `et`: FAO Evapotranspiration (in mm)
+    *   `vpd`: Vapor pressure deficit (in hPa)
+    *   `ws`: Wind speed at 10 meters (in knots)
+    *   `wd`: Wind direction at 10 meters (in degrees)
+    *   `gusts`: Wind gusts at 10 meters (in knots)
 
 **Example:**
 
