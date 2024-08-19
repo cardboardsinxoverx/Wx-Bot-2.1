@@ -302,7 +302,7 @@ async def skewt(ctx, station_code: str):
         sounding_data = soup.find("pre").text.strip()
 
         if not sounding_data:
-            raise ValueError("Sounding data not found.")
+            raise ValueError("Sounding data not found from this WMO. This is likely because the sounding balloon was not released. Please check a neighboring WMO or try again later.")
 
         # Generate the Skew-T diagram using SHARPpy
         profile = sharppy.Profile.from_sounding(sounding_data)
@@ -326,6 +326,9 @@ async def skewt(ctx, station_code: str):
         total_totals = mpcalc.total_totals_index(profile.tmpc, profile.dwpc, profile.u, profile.v)
         # Assuming you have a function to calculate tropopause level 
         tropopause_level = calculate_tropopause_level(profile)
+
+	# Calculate tropopause level using the birner function
+        tropopause_level = birner(profile.pres, profile.tmpc, height=True)
 
         # Calculate wet-bulb temperature
         wet_bulb = mpcalc.wet_bulb_temperature(profile.pres, profile.tmpc, profile.dwpc)
@@ -358,8 +361,8 @@ async def skewt(ctx, station_code: str):
         skew.ax.text(0.7, 0.7, f'0-3km Shear: {positive_shear[0].to("knots"):.0f} kts', transform=skew.ax.transAxes)
         skew.ax.text(0.7, 0.75, f'SRH: {srh[0].to("m^2/s^2"):.0f} m^2/s^2', transform=skew.ax.transAxes)
         skew.ax.text(0.7, 0.8, f'Total Totals: {total_totals:.0f}', transform=skew.ax.transAxes)
-        skew.ax.text(0.7, 0.85, f'Tropopause: {tropopause_level}', transform=skew.ax.transAxes) 
-
+        skew.ax.text(0.7, 0.85, f'Tropopause: {tropopause_level:.1f} km', transform=skew.ax.transAxes) 
+	
 	# set units for variables
 	height = ds.height * units.meter
 
@@ -368,8 +371,8 @@ async def skewt(ctx, station_code: str):
         h = Hodograph(ax_hod, component_range=80)  # Change range in windspeeds
         h.add_grid(increment=10)
         try:
-            h.plot_colormapped(u, v, height)   
- 	# height needs to be defined, idk if its not
+            h.plot_colormapped(u, v, height)
+ 	 
         except ValueError as e:
             print(e) 
 
@@ -384,8 +387,9 @@ async def skewt(ctx, station_code: str):
         # delete the temporary image file
         os.remove(temp_image_path)
 
-    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
-        await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}")
+	# error handling
+   except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
+        await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}. This could be happening for several reasons, such as network connection issues, timeout errors, data not being in the correct format, or the bot is requesting data it wasn't programmed to understand.")
 	    
 # --- Satellite Command ---
 @bot.command()
