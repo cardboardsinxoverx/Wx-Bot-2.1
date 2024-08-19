@@ -1139,11 +1139,6 @@ Fetches ensemble model output for a specified airport and variable.
 
 # revamped, not finished and probably wont work but whatever was in there before sucked. also what ens commented out was some cache nonsense so that way it wouldn't create another API request if you wanted the same product in a certain amount of time, which i guess who cares? lol
 
-import math
-import requests
-
-# ... (get_airport_coordinates function should be defined somewhere above)
-
 def distance(lat1, lon1, lat2, lon2):
     """
     Calculate the great circle distance between two points 
@@ -1177,7 +1172,7 @@ async def lightning(ctx, icao: str, radius: int = 5):
             await ctx.send(f"Could not find airport with ICAO code {icao}.")
             return
 
-        # 2. Construct the API URL (using your provided credentials)
+        # 2. Construct the API URL 
         api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&radius={radius}&client_id=LI9ra7oPstcUiVqCpw2NB&client_secret=vLc8FjGxYpkiXMunhvUwoVVKlBOizDmuzseYX0dB'
 
         # 3. Fetch lightning data
@@ -1217,4 +1212,6 @@ async def lightning_help(ctx):
 Checks for lightning strikes near an airport.
 
 **Usage:**
-* $lightning kbix 10"""
+"""
+
+# it looks fine when im editing it but after I commit changes the lightning function turns blue and whats supposed to be in quotes turns into a function. i have no clue whats going on.
