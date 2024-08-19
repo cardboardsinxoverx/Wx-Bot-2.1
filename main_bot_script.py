@@ -1164,10 +1164,10 @@ def distance(lat1, lon1, lat2, lon2):
 
 @bot.command()
 async def lightning(ctx, icao: str, radius: int = 5):
-    """
-Checks for lightning strikes within a specified radius of an ICAO airport.
-    """
+    """Checks for lightning strikes within a specified radius of an ICAO airport."""
+
 # does adding a comment here help? the color coding appears to be corrent under editing, but after committing changes everyting between here and lightning.help turns blue for me, and the message above is the opposite.
+
     try:
         # 1. Get airport coordinates 
         airport_coords = get_airport_coordinates(icao)
