@@ -206,7 +206,6 @@ async def metar(ctx, airport_code: str):
     logging.info(f"User {ctx.author} requested METAR for {airport_code}")
 
 
-# --- TAF Command ---
 @bot.command()
 async def taf(ctx, airport_code: str):
     """Fetches TAF for the specified airport code."""
@@ -216,17 +215,17 @@ async def taf(ctx, airport_code: str):
 
         # 2. Construct URL (adjust based on ADDS API changes)
         taf_url = f'https://aviationweather.gov/api/data/taf?ids={airport_code}&format=json'
-	logging.info(f"Constructed TAF URL: {taf_url}")
 
+        logging.info(f"Constructed TAF URL: {taf_url}")
 
         # 3. Fetch Data
         response = requests.get(taf_url)
         response.raise_for_status()  # Raise an exception for HTTP errors
-	logging.info(f"Fetched TAF data for {airport_code}")
+        logging.info(f"Fetched TAF data for {airport_code}")
 
         # 4. Parse TAF
         json_data = json.loads(response.content)
-	logging.info(f"Parsed TAF JSON data for {airport_code}")
+        logging.info(f"Parsed TAF JSON data for {airport_code}")
 
         # Check if any TAF data was found at all
         if not json_data:
@@ -239,7 +238,7 @@ async def taf(ctx, airport_code: str):
         if not taf_data or not taf_time:
             raise ValueError("TAF data or issue time not found.")
 
-       # Extract the latest TAF 
+        # Extract the latest TAF 
         if 'rawText' in json_data[0] and 'issueTime' in json_data[0]:
             taf_data = json_data[0]['rawText']
             taf_time = json_data[0]['issueTime']
@@ -366,7 +365,7 @@ async def skewt(ctx, station_code: str):
         skew.ax.text(0.7, 0.85, f'Tropopause: {tropopause_level:.1f} km', transform=skew.ax.transAxes) 
 	
 	# set units for variables
-	height = ds.height * units.meter
+        height = ds.height * units.meter
 
 	# add hodograph
         ax_hod = inset_axes(skew.ax, '25%', '20%', loc='upper left')
@@ -390,7 +389,7 @@ async def skewt(ctx, station_code: str):
         os.remove(temp_image_path)
 
 	# error handling
-   except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
+    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}. This could be happening for several reasons, such as network connection issues, timeout errors, data not being in the correct format, or the bot is requesting data it wasn't programmed to understand.")
 	    
 # --- Satellite Command ---
@@ -936,39 +935,37 @@ async def alerts(ctx, location: str = None):
     """Fetches and displays current weather alerts for a specified location or the user's location."""
 
     try:
-	    
-    location = location.lower()  # Convert input to lowercase for easier comparison, that way caps lock or something won't matter
+        location = location.lower() if location else None  # Handle potential None value
 
-        if location in state_abbreviations_to_fips:
+        if location and location in state_abbreviations_to_fips:
             state_fips = state_abbreviations_to_fips[location]
-            alerts_url = f"https://api.weather.gov/alerts/active?area={state_fips}" 
+            alerts_url = f"https://api.weather.gov/alerts/active?area={state_fips}"
         else:
-            # ... (handle other location types if needed, or provide an error message)
-            await ctx.send("Invalid location. Please provide a two-letter state abbreviation (e.g., 'ga' for Georgia).")
-            return
+            # Handle case where location is not provided or invalid
+            if not location:
+                # Attempt to get user's location from Discord profile (implementation not provided)
+                # ...
+                pass  # Placeholder for getting user's location
+            else:
+                await ctx.send("Invalid location. Please provide a two-letter state abbreviation (e.g., 'ga' for Georgia).")
+                return
 
-        print(f"Fetching alerts from: {alerts_url}") # Debugging statement
+        print(f"Fetching alerts from: {alerts_url}") 
         response = requests.get(alerts_url)
+        response.raise_for_status()  # Raise an exception for bad HTTP status codes
 
-        if response.status_code == 200:
-            alerts_data = response.json()
-            print(f"Alerts data received: {alerts_data}")  # Debugging statement
+        alerts_data = response.json()
+        print(f"Alerts data received: {alerts_data}") 
 
-        filtered_alerts = []
-        for alert in alerts_data['features']:
-            event = alert['properties']['event']
-            severity = alert['properties']['severity']
-
-            # Customize filtering criteria here if needed
-            filtered_alerts.append(alert)
+        filtered_alerts = [
+            alert for alert in alerts_data.get('features', []) 
+            if alert.get('properties') and alert['properties'].get('event') and alert['properties'].get('severity')
+        ]
 
         if filtered_alerts:
             for alert in filtered_alerts:
                 properties = alert['properties']
-                embed = discord.Embed(
-                    title=properties['headline'],
-                    color=discord.Color.red() 
-                )
+                embed = discord.Embed(title=properties['headline'], color=discord.Color.red())
                 embed.add_field(name="Severity", value=properties['severity'], inline=True)
                 embed.add_field(name="Effective", value=properties['onset'], inline=True)
                 embed.add_field(name="Expires", value=properties['expires'], inline=True)
@@ -978,9 +975,6 @@ async def alerts(ctx, location: str = None):
                 await ctx.send(embed=embed)
         else:
             await ctx.send("No weather alerts found for the specified location.")
-
-    else:
-        await ctx.send(f"Error fetching alerts: {response.status_code}")
 
     except requests.exceptions.RequestException as e:
         await ctx.send(f"Error fetching alerts: {e}")
@@ -994,7 +988,7 @@ Fetches and displays current weather alerts for a specified location or the user
 
 **Arguments:**
 
-*   `location` (optional): The location for which you want to retrieve alerts.  Provide a two-letter state abbreviation (e.g., 'MT' for Montana). If not provided, the bot will attempt to use the user's location based on their Discord profile.
+*   `location` (optional): The location for which you want to retrieve alerts. Provide a two-letter state abbreviation (e.g., 'MT' for Montana). If not provided, the bot will attempt to use the user's location based on their Discord profile.
 """
 # this was tested without bot.command() function, it works.
 
@@ -1016,12 +1010,12 @@ async def models(ctx, model_type: str, icao: str, variable: str):
         # Map shorthand parameters to things nobody wants to type
         if variable == 'rh':
             variable = 'relative_humidity_2m' #this needs to be expanded. absolutely zero people want to type something like et0_fao_evapotranspiration for their parameter. 
-	if variable == 'temp':
-	    variable = 'temperature_2m'
-	if variable == 'dp':
-	    variable = 'dew_point_2m'
-	if variable == 'feelslike'
-	    variable = 'apparent_temperature'
+        if variable == 'temp':
+            variable = 'temperature_2m'
+        if variable == 'dp':
+            variable = 'dew_point_2m'
+        if variable == 'feelslike': # Corrected line with colon
+            variable = 'apparent_temperature'
 
         # Available models
         available_deterministic_models = ["gfs_hrrr", "gfs_graphcast025"]
@@ -1139,6 +1133,32 @@ Fetches ensemble model output for a specified airport and variable.
 
 # revamped, not finished and probably wont work but whatever was in there before sucked. also what ens commented out was some cache nonsense so that way it wouldn't create another API request if you wanted the same product in a certain amount of time, which i guess who cares? lol
 
+def get_airport_coordinates(icao):
+  """
+  Fetches latitude and longitude coordinates for a given ICAO airport code using the OpenFlights API.
+  
+  Args:
+      icao (str): The ICAO code of the airport.
+
+  Returns:
+      tuple: A tuple containing the latitude and longitude coordinates (float, float) if found, otherwise None.
+  """
+
+  api_url = f'https://openflights.org/api/v1/airports/{icao}'
+  try:
+    response = requests.get(api_url)
+    response.raise_for_status()  # Raise an exception for bad status codes
+    data = response.json()
+
+    if data and 'latitude' in data and 'longitude' in data:
+      return (float(data['latitude']), float(data['longitude']))
+    else:
+      return None
+
+  except requests.exceptions.RequestException as e:
+    print(f"Error fetching airport data: {e}")
+    return None
+
 def distance(lat1, lon1, lat2, lon2):
     """
     Calculate the great circle distance between two points 
@@ -1212,6 +1232,4 @@ async def lightning_help(ctx):
 Checks for lightning strikes near an airport.
 
 **Usage:**
-"""
-
-# it looks fine when im editing it but after I commit changes the lightning function turns blue and whats supposed to be in quotes turns into a function. i have no clue whats going on.
+""")
