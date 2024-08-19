@@ -1139,7 +1139,11 @@ Fetches ensemble model output for a specified airport and variable.
 
 # revamped, not finished and probably wont work but whatever was in there before sucked. also what ens commented out was some cache nonsense so that way it wouldn't create another API request if you wanted the same product in a certain amount of time, which i guess who cares? lol
 
-# --- Lightning Command ---
+import math
+import requests
+
+# ... (get_airport_coordinates function should be defined somewhere above)
+
 def distance(lat1, lon1, lat2, lon2):
     """
     Calculate the great circle distance between two points 
@@ -1166,8 +1170,6 @@ def distance(lat1, lon1, lat2, lon2):
 async def lightning(ctx, icao: str, radius: int = 5):
     """Checks for lightning strikes within a specified radius of an ICAO airport."""
 
-# does adding a comment here help? the color coding appears to be corrent under editing, but after committing changes everyting between here and lightning.help turns blue for me, and the message above is the opposite.
-
     try:
         # 1. Get airport coordinates 
         airport_coords = get_airport_coordinates(icao)
@@ -1175,8 +1177,8 @@ async def lightning(ctx, icao: str, radius: int = 5):
             await ctx.send(f"Could not find airport with ICAO code {icao}.")
             return
 
-        # 2. Construct the API URL (replace with your actual credentials)
-        api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&radius={radius}&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET'
+        # 2. Construct the API URL (using your provided credentials)
+        api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&radius={radius}&client_id=LI9ra7oPstcUiVqCpw2NB&client_secret=vLc8FjGxYpkiXMunhvUwoVVKlBOizDmuzseYX0dB'
 
         # 3. Fetch lightning data
         response = requests.get(api_url)
@@ -1208,3 +1210,11 @@ async def lightning(ctx, icao: str, radius: int = 5):
         await ctx.send(f"Error parsing lightning data: {e}")
     except ValueError as e:
         await ctx.send(f"API Error: {e}") 
+
+@lightning.help
+async def lightning_help(ctx):
+    await ctx.send("""
+Checks for lightning strikes near an airport.
+
+**Usage:**
+* $lightning kbix 10"""
