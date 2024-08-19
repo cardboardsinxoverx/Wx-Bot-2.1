@@ -1206,7 +1206,7 @@ async def lightning(ctx, icao: str, radius: int = 5):
         await ctx.send(f"Error parsing lightning data: {e}")
     except ValueError as e:
         await ctx.send(f"API Error: {e}")  # Assuming the API returns errors in the 'error' field
-	    
+	"""    
 lightning.help = """
 **$lightning <icao> [radius]**
 
