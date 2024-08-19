@@ -1177,11 +1177,10 @@ async def lightning(ctx, icao: str, radius: int = 5):
         api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET'
 
         # 3. Fetch lightning data
-        request = urllib3.request.urlopen(api_url)
-        response = request.read()
-        data = json.loads(response)
-        request.close()
-
+        response = requests.get(api_url)  # Use requests directly
+        response.raise_for_status()
+        data = response.json()
+        
         # 4. Check for success and process data
         if data['success']:
             lightning_data = data['data']
@@ -1201,9 +1200,13 @@ async def lightning(ctx, icao: str, radius: int = 5):
         else:
             await ctx.send(f"An error occurred: {data['error']['description']}")
 
-    except Exception as e:
-        await ctx.send(f"Error checking for lightning: {e}")
-
+    except requests.exceptions.RequestException as e:
+        await ctx.send(f"Error fetching lightning data: {e}")
+    except KeyError as e:
+        await ctx.send(f"Error parsing lightning data: {e}")
+    except ValueError as e:
+        await ctx.send(f"API Error: {e}")  # Assuming the API returns errors in the 'error' field
+	    
 lightning.help = """
 **$lightning <icao> [radius]**
 
