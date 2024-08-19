@@ -1167,25 +1167,25 @@ async def lightning(ctx, icao: str, radius: int = 5):
     """Checks for lightning strikes within a specified radius of an ICAO airport."""
 
     try:
-        # 1. Get airport coordinates (you'll need to implement this function)
+        # 1. Get airport coordinates 
         airport_coords = get_airport_coordinates(icao)
         if airport_coords is None:
             await ctx.send(f"Could not find airport with ICAO code {icao}.")
             return
 
         # 2. Construct the API URL (replace with your actual credentials)
-        api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&client_id=LI9ra7oPstcUiVqCpw2NB&client_secret=vLc8FjGxYpkiXMunhvUwoVVKlBOizDmuzseYX0dB'
+        api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&radius={radius}&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET'
 
         # 3. Fetch lightning data
-        response = requests.get(api_url)  # Use requests directly
+        response = requests.get(api_url)
         response.raise_for_status()
         data = response.json()
-        
+
         # 4. Check for success and process data
         if data['success']:
             lightning_data = data['data']
 
-            # 5. Check for strikes within the radius (using the provided distance function)
+            # 5. Check for strikes within the radius 
             has_lightning = any(
                 distance(strike['latitude'], strike['longitude'], airport_coords[0], airport_coords[1]) <= radius
                 for strike in lightning_data
@@ -1205,8 +1205,9 @@ async def lightning(ctx, icao: str, radius: int = 5):
     except KeyError as e:
         await ctx.send(f"Error parsing lightning data: {e}")
     except ValueError as e:
-        await ctx.send(f"API Error: {e}")  # Assuming the API returns errors in the 'error' field
-	"""    
+        await ctx.send(f"API Error: {e}") 
+
+ 
 lightning.help = """
 **$lightning <icao> [radius]**
 
@@ -1217,32 +1218,3 @@ Checks for lightning strikes within a specified radius of an ICAO airport.
 *   `icao`: The ICAO code of the airport (e.g., 'KPIT', 'KBIX').
 *   `radius` (optional): The radius (in miles) within which to check for lightning strikes (default: 5 miles).
 """
-
-# --- Webcam Command --- 
-@bot.command()
-async def webcam(ctx, location: str):
-    """Displays a weather webcam image for a specified location."""
-
-    await ctx.send("This feature is not yet implemented. Stay tuned for updates!")
-
-webcam.help = """
-**$webcam <location>**
-
-*(Not yet implemented)*  Intended to display a weather webcam image for a specified location.
-
-**Arguments:**
-
-*   `location`: The location for which you want to view a webcam image. 
-"""
-
-    # i got it written idk if it'll break the bot or not, im not comfortable with this command
-
-if __name__ == '__main__':
-    # Configure logging
-    logging.basicConfig(
-        filename="weather_bot.log",
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
-    )
-
-    bot.run(config.DISCORD_TOKEN)
