@@ -1174,7 +1174,7 @@ async def lightning(ctx, icao: str, radius: int = 5):
             return
 
         # 2. Construct the API URL (replace with your actual credentials)
-        api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&client_id=YOUR_CLIENT_ID&client_secret=YOUR_CLIENT_SECRET'
+        api_url = f'https://data.api.xweather.com/lightning/{airport_coords[0]},{airport_coords[1]}?format=json&filter=cg&limit=10&client_id=LI9ra7oPstcUiVqCpw2NB&client_secret=vLc8FjGxYpkiXMunhvUwoVVKlBOizDmuzseYX0dB'
 
         # 3. Fetch lightning data
         response = requests.get(api_url)  # Use requests directly
