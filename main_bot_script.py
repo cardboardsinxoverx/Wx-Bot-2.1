@@ -1208,15 +1208,3 @@ async def lightning(ctx, icao: str, radius: int = 5):
         await ctx.send(f"Error parsing lightning data: {e}")
     except ValueError as e:
         await ctx.send(f"API Error: {e}") 
-
- 
-lightning.help = """
-**$lightning <icao> [radius]**
-
-Checks for lightning strikes within a specified radius of an ICAO airport.
-
-**Arguments:**
-
-*   `icao`: The ICAO code of the airport (e.g., 'KPIT', 'KBIX').
-*   `radius` (optional): The radius (in miles) within which to check for lightning strikes (default: 5 miles).
-"""
