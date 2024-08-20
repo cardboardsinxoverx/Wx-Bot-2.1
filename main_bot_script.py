@@ -1188,6 +1188,7 @@ Fetches ensemble model output for a specified airport and variable.
 
 # revamped, not finished and probably wont work but whatever was in there before sucked. also what ens commented out was some cache nonsense so that way it wouldn't create another API request if you wanted the same product in a certain amount of time, which i guess who cares? lol
 
+# --- Lightning Command --- 
 def get_airport_coordinates(icao):
   """
   Fetches latitude and longitude coordinates for a given ICAO airport code using the OpenFlights API.
