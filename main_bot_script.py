@@ -10,7 +10,7 @@ import discord
 from discord.ext import commands
 import requests
 import urllib3
-import openmeteo_py
+# import openmeteo_py
 import datetime
 import pytz
 from bs4 import BeautifulSoup  # Instead of 'import BeautifulSoup'
@@ -20,7 +20,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import sharppy
 import sharppy.plot.skew as skew
-import cartopy
+# import cartopy
 import cartopy.crs as ccrs
 import os
 import json
@@ -35,19 +35,19 @@ import PIL
 from PIL import Image
 import numpy as np
 import pandas as pd
-import geocoder
+# import geocoder
 import json
 import psutil
 import config
-import signal
+# import signal
 import math
-import metpy
-import requests_cache
-from openmeteo_py import Options,OWmanager
-from retry import retry
-import openmeteo_requests
-from openmeteo_py import Hourly, Options, Variable
-import airportsdata
+# import metpy
+# import requests_cache
+# from openmeteo_py import Options,OWmanager
+# from retry import retry
+# import openmeteo_requests
+# from openmeteo_py import Hourly, Options
+# import airportsdata
 
 # def save_cache(cache_type, data):
 #     with open(f"{cache_type}_cache.json", "w") as f:
@@ -1282,10 +1282,12 @@ async def lightning(ctx, icao: str, radius: int = 5):
     except ValueError as e:
         await ctx.send(f"API Error: {e}") 
 
-@lightning.help
-async def lightning_help(ctx):
-    await ctx.send("""
-Checks for lightning strikes near an airport.
+# @lightning.help
+# async def lightning_help(ctx):
+#     await ctx.send("""
+#         Checks for lightning strikes near an airport.
 
-**Usage: $lighting <icao> <distance(sm)>**
-""")
+#         **Usage: $lighting <icao> <distance(sm)>**
+#         """)
+if __name__ == "__main__":
+    bot.run(token=config.DISCORD_TOKEN)
