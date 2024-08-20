@@ -144,18 +144,11 @@ async def pull(ctx):
     await ctx.send(f'{res}\nFinished. Good luck.')
 
 # --- Restart Command ---
-@bot.command()
+'''@bot.command()
 async def restart(ctx):
     """Restarts the bot."""
     try:
         await ctx.send("Restarting...")
-        # Get the process ID of the current Python process
-        #pid = os.getpid()
-        # Send SIGTERM signal to gracefully terminate the process
-        #os.kill(pid, signal.SIGTERM) 
-        #time.sleep(0.5)
-        #python = sys.executable
-        #os.execl(python, python, *sys.argv)
         p = psutil.Process(os.getpid())
         for handler in p.open_files() + p.connections():
             os.close(handler.fd)
@@ -163,6 +156,28 @@ async def restart(ctx):
         python = sys.executable
         os.execl(python, python, *sys.argv)
         await ctx.send("Back online bitches")
+    except Exception as e:
+        await ctx.send(f"Error during restart: {e}")'''
+
+### --- Restart Command w/ logging & try-except block
+@bot.command()
+async def restart(ctx):
+    """Restarts the bot."""
+    try:
+        await ctx.send("Restarting...")
+
+        p = psutil.Process(os.getpid())
+        for handler in p.open_files() + p.connections():
+            try:
+                os.close(handler.fd)
+            except Exception as e:
+                print(f"Error closing handler: {e}")  # Log the error
+
+        time.sleep(2)  # this needs to be adjusted, kind of like a distributor when you're adjusting timing on a motor. more time gives it longer to clean up tasks & operations and can increase reliability of the bot actually restarting, but can get to a point where its too slow.
+
+        python = sys.executable
+        os.execl(python, python, *sys.argv)
+
     except Exception as e:
         await ctx.send(f"Error during restart: {e}")
 
