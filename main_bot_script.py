@@ -955,39 +955,23 @@ Fetches ASCAT (Advanced Scatterometer) images for the specified storm from the F
 
 *   `storm_id` (optional): The ID of the storm (e.g., '05L'). If not provided, the bot will list currently active storms.
 """
-
-# --- Alerts Command ---
-# state abbreviations turnt into Federal Information Processing Standards
-state_abbreviations_to_fips = {
-    'al': '01', 'ak': '02', 'az': '04', 'ar': '05', 'ca': '06', 'co': '08', 'ct': '09', 'de': '10', 
-    'dc': '11', 'fl': '12', 'ga': '13', 'hi': '15', 'id': '16', 'il': '17', 'in': '18', 'ia': '19', 
-    'ks': '20', 'ky': '21', 'la': '22', 'me': '23', 'md': '24', 'ma': '25', 'mi': '26', 'mn': '27', 
-    'ms': '28', 'mo': '29', 'mt': '30', 'ne': '31', 'nv': '32', 'nh': '33', 'nj': '34', 'nm': '35', 
-    'ny': '36', 'nc': '37', 'nd': '38', 'oh': '39', 'ok': '40', 'or': '41', 'pa': '42', 'ri': '43', 
-    'sc': '45', 'sd': '46', 'tn': '47', 'tx': '48', 'ut': '49', 'vt': '50', 'va': '51', 'wa': '53', 
-    'wv': '54', 'wi': '55', 'wy': '56', 
-    # where you can't vote
-    'as': '60', 'gu': '66', 'mp': '69', 'pr': '72', 'vi': '78'
-}
-
+# --- Alerts Command --- 
 @bot.command()
-async def alerts(ctx, location: str = None):
-    """Fetches and displays current weather alerts for a specified location or the user's location."""
+async def alerts(ctx, state_abbr: str = None):
+    """Fetches and displays current weather alerts for a specified state or the user's location."""
 
     try:
-        location = location.lower() if location else None  # Handle potential None value
+        state_abbr = state_abbr.upper() if state_abbr else None  # Handle potential None value and ensure uppercase
 
-        if location and location in state_abbreviations_to_fips:
-            state_fips = state_abbreviations_to_fips[location]
-            alerts_url = f"https://api.weather.gov/alerts/active?area={state_fips}"
+        if state_abbr:
+            alerts_url = f"https://api.weather.gov/alerts/active?area={state_abbr}" 
         else:
-            # Handle case where location is not provided or invalid
-            if not location:
-                # Attempt to get user's location from Discord profile (implementation not provided)
-                # ...
+            # Handle case where state abbreviation is not provided 
+            if not state_abbr:
+               
                 pass  # Placeholder for getting user's location
             else:
-                await ctx.send("Invalid location. Please provide a two-letter state abbreviation (e.g., 'ga' for Georgia).")
+                await ctx.send("Invalid state abbreviation. Please provide a two-letter state abbreviation (e.g., 'GA' for Georgia).")
                 return
 
         print(f"Fetching alerts from: {alerts_url}") 
@@ -1014,7 +998,7 @@ async def alerts(ctx, location: str = None):
                 embed.add_field(name="Instructions", value=properties['instruction'] or "None", inline=False)
                 await ctx.send(embed=embed)
         else:
-            await ctx.send("No weather alerts found for the specified location.")
+            await ctx.send("No weather alerts found for the specified state.")
 
     except requests.exceptions.RequestException as e:
         await ctx.send(f"Error fetching alerts: {e}")
@@ -1030,7 +1014,7 @@ Fetches and displays current weather alerts for a specified location or the user
 
 *   `location` (optional): The location for which you want to retrieve alerts. Provide a two-letter state abbreviation (e.g., 'MT' for Montana). If not provided, the bot will attempt to use the user's location based on their Discord profile.
 """
-# this was tested without bot.command() function, it works.
+# correctted URL 
 
 # --- Models Command --- 
 @bot.command()
