@@ -834,7 +834,7 @@ Displays a radar image link for the specified region and overlay type.
 *   <overlay>: The type of overlay on the radar image (default: 'base'). Valid options are: 'base', 'totals', no input defaults to 'base'.
 """
 	    
-def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="https://example.com/marine_weather_emblem.png", zoom=0.1):
+def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="https://github.com/cardboardsinxoverx/Wx-Bot-2.1/blob/main/photo.jpg", zoom=0.1):
     """Adds a marker (if lat/lon provided) and the Marine Weather emblem (from a URL) to the map image."""
 
     # 1. Add Location Marker (if coordinates are provided)
