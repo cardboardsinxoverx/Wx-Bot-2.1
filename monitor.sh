@@ -1,7 +1,7 @@
 #!/bin/bash
 
 while true; do
-    if ! pgrep -f "your_bot_script.py" > /dev/null; then
+    if ! pgrep -f "main_bot_script.py" > /dev/null; then
         echo "Bot not running, restarting..."
         python3 main_bot_script.py &  
     fi
