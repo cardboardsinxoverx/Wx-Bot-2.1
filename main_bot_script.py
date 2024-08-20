@@ -834,18 +834,8 @@ Displays a radar image link for the specified region and overlay type.
 *   <overlay>: The type of overlay on the radar image (default: 'base'). Valid options are: 'base', 'totals', no input defaults to 'base'.
 """
 	    
-# --- overlay that wont work ---
-def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png", zoom=0.1):
-    """Adds a marker (if lat/lon provided) and a logo to the map image.
-
-    Args:
-        ax: The Matplotlib Axes object representing the map.
-        lat (float, optional): Latitude of the marker (if needed). Defaults to None.
-        lon (float, optional): Longitude of the marker (if needed). Defaults to None.
-        icon_path (str, optional): Path to the marker icon image. Defaults to None.
-        logo_path (str, optional): Path to the logo image file. Defaults to "logo.png".
-        zoom (float, optional): Zoom level for the marker icon. Defaults to 0.1.
-    """
+def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="https://example.com/marine_weather_emblem.png", zoom=0.1):
+    """Adds a marker (if lat/lon provided) and the Marine Weather emblem (from a URL) to the map image."""
 
     # 1. Add Location Marker (if coordinates are provided)
     if lat is not None and lon is not None:
@@ -860,32 +850,35 @@ def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="logo.png"
 
         imagebox = OffsetImage(img, zoom=zoom)
         ab = AnnotationBbox(imagebox, (lon, lat), xycoords=ccrs.PlateCarree()._as_mpl_transform(ax),
-                           boxcoords="offset points", pad=0, zorder=10)  # Higher zorder to place above other elements
+                            boxcoords="offset points", pad=0, zorder=10)  # Higher zorder to place above other elements
         ax.add_artist(ab)
         ax.annotate(f"({lat:.2f}, {lon:.2f})", (lon, lat), xytext=(3, 3), textcoords="offset points", zorder=10)
 
-    # 2. Add Logo
+    # 2. Add Marine Weather Emblem (from URL)
     try:
-        logo_img = Image.open(logo_path)
-    except (FileNotFoundError, PIL.UnidentifiedImageError):
-        logging.warning("Error loading logo. Skipping logo overlay.")
-        return  # Exit function if logo cannot be loaded
+        response = requests.get(logo_path)
+        response.raise_for_status() 
+        logo_img = Image.open(BytesIO(response.content))
+    except (requests.exceptions.RequestException, PIL.UnidentifiedImageError) as e:
+        logging.error(f"Error loading Marine Weather emblem from URL: {e}")
+        return
 
-    logo_img.thumbnail((25, 25))  # Resize logo to 25x25 pixels
+    logo_img.thumbnail((25, 25)) 
 
-    # Calculate logo position with margin
-    dpi = 100
-    margin_pixels = int(1 * dpi)  # 1 cm margin
-    x_pos = ax.get_xlim()[1] - logo_img.width - margin_pixels
-    y_pos = ax.get_ylim()[0] + margin_pixels
+    # Calculate logo position (5x5 pixels from bottom right)
+    fig = ax.get_figure()
+    fig_width, fig_height = fig.get_size_inches() * fig.dpi
+
+    x_pos = fig_width - logo_img.width - 5  
+    y_pos = 5
 
     logo = OffsetImage(logo_img)
     ab_logo = AnnotationBbox(logo, (x_pos, y_pos),
-                            frameon=False,
-                            xycoords='data',
-                            boxcoords="offset points",
-                            box_alignment=(1, 0),
-                            zorder=10)
+                             frameon=False,
+                             xycoords='figure pixels',  # Position in figure pixels
+                             boxcoords="offset points",
+                             box_alignment=(1, 0),
+                             zorder=10)
     ax.add_artist(ab_logo)
 # ens before this works, the file names and source maybe for it? needs to be correct. this was just some generic code written with "logo.png". I dont know what the bots avatar's name is and if this just isn't possible or its just too silly, then I'll revert the code. I just thought you'd be able to make it work from here 
 
@@ -1293,5 +1286,5 @@ async def lightning_help(ctx):
     await ctx.send("""
 Checks for lightning strikes near an airport.
 
-**Usage:**
+**Usage: $lighting <icao> <distance(sm)>**
 """)
