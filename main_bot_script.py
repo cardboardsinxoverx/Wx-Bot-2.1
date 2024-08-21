@@ -339,27 +339,28 @@ async def skewt(ctx, station_code: str):
         station_code = station_code.upper()
 
 	# Fetch and process the sounding data
-        ds = xr.Dataset.from_dataframe(WyomingUpperAir.request_data(datetime.now(), station_code.strip('K')))
+        # ds = xr.Dataset.from_dataframe(WyomingUpperAir.request_data(datetime.datetime.now(), station_code.strip('K')))
 
         # Get today's date in YYYY-MM-DD format
-        today = datetime.date.today().strftime("%Y-%m-%d")
+        now = datetime.datetime.today()
 
-        # Construct the URL 
-        sounding_url = f"https://weather.uwyo.edu/cgi-bin/sounding?region=naconf&STNM={station_code}&DATE={today}&HOUR=latest&ENV=std"
+        # # Construct the URL 
+        # sounding_url = f"https://weather.uwyo.edu/cgi-bin/sounding?region=naconf&STNM={station_code}&DATE={today}&HOUR=latest&YEAR={datetime.datetime.now().year}&ENV=std"
 
-        # Fetch the sounding data
-        response = requests.get(sounding_url, verify=False)
-        response.raise_for_status()
+        # # Fetch the sounding data
+        # response = requests.get(sounding_url, verify=False)
+        # response.raise_for_status()
 
-        # Parse the HTML to extract the sounding text
-        soup = BeautifulSoup(response.content, 'html.parser')
-        sounding_data = soup.find("pre").text.strip()
-
+        # # Parse the HTML to extract the sounding text
+        # soup = BeautifulSoup(response.content, 'html.parser')
+        # sounding_data = soup.find("pre").text.strip()
+        sounding_data = WyomingUpperAir.request_data(now, station_code)
         if not sounding_data:
             raise ValueError("Sounding data not found from this WMO. This is likely because the sounding balloon was not released. Please check a neighboring WMO or try again later.")
 
         # Generate the Skew-T diagram using SHARPpy
         profile = sharppy.Profile.from_sounding(sounding_data)
+
 
         # Calculate indices 
         cape, cin = mpcalc.cape_cin(profile)
@@ -398,7 +399,7 @@ async def skewt(ctx, station_code: str):
         skew.plot_barbs(profile.pres[::2], profile.u[::2], profile.v[::2])  # Wind barbs 
 
         # mush indices on skewT
-        plt.title(f'{station_code} {today} {profile.time[0].hour:02d}Z', weight='bold', size=20)
+        plt.title(f'{station_code} {now.strftime("%Y-%m-%dT%H")} {profile.time[0].hour:02d}Z', weight='bold', size=20)
         skew.ax.text(0.7, 0.1, f'CAPE: {cape.to("J/kg"):.0f}', transform=skew.ax.transAxes)
         skew.ax.text(0.7, 0.05, f'CIN: {cin.to("J/kg"):.0f}', transform=skew.ax.transAxes)
         skew.ax.text(0.7, 0.15, f'LIFTED INDEX: {lifted_index:.0f}', transform=skew.ax.transAxes)
@@ -418,7 +419,7 @@ async def skewt(ctx, station_code: str):
         skew.ax.text(0.7, 0.85, f'Tropopause: {tropopause_level:.1f} km', transform=skew.ax.transAxes) 
 	
 	# set units for variables
-        height = ds.height * units.meter
+        height = profile.height * units.meter
 
 	# add hodograph
         ax_hod = inset_axes(skew.ax, '25%', '20%', loc='upper left')
