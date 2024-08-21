@@ -1084,6 +1084,9 @@ async def alerts(ctx, state_abbr: str = None):
                 embed.add_field(name="Area", value=", ".join(properties['areaDesc']), inline=False)
                 embed.add_field(name="Description", value=properties['description'], inline=False)
                 embed.add_field(name="Instructions", value=properties['instruction'] or "None", inline=False)
+		# Handle potential commas within area descriptions
+                #area_desc = "; ".join(properties['areaDesc'])  # Use semicolon as a separator, remove before restarting server pls
+		#embed.add_field(name="Area", value=area_desc, inline=False)
                 await ctx.send(embed=embed)
         else:
             await ctx.send("No weather alerts found for the specified state.")
