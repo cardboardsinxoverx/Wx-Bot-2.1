@@ -962,6 +962,87 @@ Fetches ASCAT (Advanced Scatterometer) images for the specified storm from the F
 
 *   `storm_id` (optional): The ID of the storm (e.g., '05L'). If not provided, the bot will list currently active storms.
 """
+
+# working ASCAT command for Atlantic Basin
+
+'''# --- ASCAT Command ---
+@bot.command()
+async def ascat(ctx, storm_id: str = None):
+    """Fetches ASCAT images for the specified storm from FNMOC across all basins."""
+
+    try:
+        # Fetch the main FNMOC TCWEB page 
+        base_url = "https://www.fnmoc.navy.mil/tcweb/cgi-bin/tc_home.cgi"  
+        response = requests.get(base_url, verify=False) 
+        response.raise_for_status()
+
+        # Parse the HTML to find active storms across all basins
+        active_storms = extract_active_storms_global(response.content)
+
+        if storm_id is None:
+            # If no storm_id is provided, list the active storms
+            if active_storms:
+                storm_list = [f"{s['id']} ({s['basin']})" for s in active_storms]
+                await ctx.send(f"Currently active storms: {', '.join(storm_list)}")
+            else:
+                await ctx.send("No active storms found.")
+            return  # Exit the command early
+
+        # Check if the requested storm is active (across all basins)
+        matching_storms = [s for s in active_storms if s['id'].upper() == storm_id.upper()]
+        if not matching_storms:
+            raise ValueError(f"Storm '{storm_id}' not found among active storms.")
+
+        # Get basin information for the specified storm
+        storm_basin = matching_storms[0]['basin']
+
+        # Construct the URL for the storm's ASCAT image page (adjust based on basin)
+        storm_url = f"{base_url}?YEAR=2024&MO=Aug&BASIN={storm_basin}&STORM_NAME={storm_id}&SENSOR=&PHOT=yes&ARCHIVE=Mosaic&NAV=tc&DISPLAY=all&MOSAIC_SCALE=20%&STYLE=table&ACTIVES={','.join([s['id'] for s in active_storms])}&TYPE=ascat&CURRENT=LATEST.jpg&PROD=hires&DIR=/tcweb/dynamic/products/tc24/{storm_basin}/{storm_id}/ascat/hires&file_cnt=160"
+
+        # Fetch the storm's ASCAT image page 
+        response = requests.get(storm_url, verify=False) 
+        response.raise_for_status()
+
+        # Parse the HTML to extract image URLs
+        soup = BeautifulSoup(response.content, 'html.parser')
+        image_urls = extract_image_urls(soup)
+
+        # Download and send images
+        for image_url in image_urls:
+            image_filename = image_url.split('/')[-1]
+            urllib3.request.urlretrieve(image_url, image_filename)
+            await ctx.send(file=discord.File(image_filename))
+
+    except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
+        await ctx.send(f"Error retrieving/parsing ASCAT imagery: {e}")
+
+# Functions for parsing 
+
+def extract_active_storms_global(html_content):
+    """Parses the HTML content to extract a list of active storms across all basins."""
+    soup = BeautifulSoup(html_content, 'html.parser')
+    active_storms_table = soup.find('table', {'class': 'global_active_storms_table'})  # Adjust the class name if needed
+
+    if active_storms_table:
+        storms = []
+        for row in active_storms_table.find_all('tr')[1:]:  # Skip the header row
+            columns = row.find_all('td')
+            if len(columns) >= 2:  # Ensure there are at least two columns (storm ID and basin)
+                storm_id = columns[0].text.strip()
+                basin = columns[1].text.strip()  # Assuming the second column contains the basin
+                storms.append({'id': storm_id, 'basin': basin})
+        return storms
+    else:
+        return []  # No active storms found
+
+
+def extract_image_urls(soup):
+    """Parses the BeautifulSoup object (soup) to extract a list of image URLs."""
+    image_tags = soup.find_all('img', {'class': 'product_image'})
+    base_url = "https://www.fnmoc.navy.mil" 
+    return [base_url + img['src'] for img in image_tags]'''
+# future ASCAT command for global storms
+
 # --- Alerts Command --- 
 @bot.command()
 async def alerts(ctx, state_abbr: str = None):
