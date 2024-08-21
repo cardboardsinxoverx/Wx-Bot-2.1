@@ -41,7 +41,12 @@ import psutil
 import config
 # import signal
 import math
-# import metpy
+from siphon.simplewebservice.wyoming import WyomingUpperAir
+import metpy
+from metpy.units import units
+import metpy.calc as mpcalc
+from metpy.plots import add_metpy_logo, SkewT
+import xarray as xr
 # import requests_cache
 # from openmeteo_py import Options,OWmanager
 # from retry import retry
@@ -373,10 +378,10 @@ async def skewt(ctx, station_code: str):
         srh = mpcalc.storm_relative_helicity(u, v, height, profile.storm_motion)
         total_totals = mpcalc.total_totals_index(profile.tmpc, profile.dwpc, profile.u, profile.v)
         # Assuming you have a function to calculate tropopause level 
-        tropopause_level = calculate_tropopause_level(profile)
+        tropopause_level = mpcalc.calculate_tropopause_level(profile)
 
 	# Calculate tropopause level using the birner function
-        tropopause_level = birner(profile.pres, profile.tmpc, height=True)
+        tropopause_level = mpcalc.birner(profile.pres, profile.tmpc, height=True)
 
         # Calculate wet-bulb temperature
         wet_bulb = mpcalc.wet_bulb_temperature(profile.pres, profile.tmpc, profile.dwpc)
