@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup  # Instead of 'import BeautifulSoup'
 from io import BytesIO
 import matplotlib
 matplotlib.use('Agg')
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import matplotlib.pyplot as plt
 import sharppy
 import sharppy.plot.skew as skew
@@ -45,7 +46,7 @@ from siphon.simplewebservice.wyoming import WyomingUpperAir
 import metpy
 from metpy.units import units
 import metpy.calc as mpcalc
-from metpy.plots import add_metpy_logo, SkewT
+from metpy.plots import add_metpy_logo, SkewT, Hodograph
 import xarray as xr
 # import requests_cache
 # from openmeteo_py import Options,OWmanager
@@ -338,7 +339,7 @@ async def skewt(ctx, station_code: str):
         station_code = station_code.upper()
 
 	# Fetch and process the sounding data
-        ds = xr.Dataset.from_dataframe(WyomingUpperAir.request_data(format_date, station.strip('K')))
+        ds = xr.Dataset.from_dataframe(WyomingUpperAir.request_data(datetime.now(), station_code.strip('K')))
 
         # Get today's date in YYYY-MM-DD format
         today = datetime.date.today().strftime("%Y-%m-%d")
@@ -374,8 +375,8 @@ async def skewt(ctx, station_code: str):
         k_index = mpcalc.k_index(profile.pres, profile.tmpc, profile.dwpc)
         mpl_pressure, mpl_temperature = mpcalc.mpl(profile.pres, profile.tmpc, profile.dwpc)
         max_temp = mpcalc.max_temperature(profile.pres, profile.tmpc, profile.dwpc)
-        positive_shear = mpcalc.bulk_shear(p, u, v, height=slice(0, 3000 * units.m))
-        srh = mpcalc.storm_relative_helicity(u, v, height, profile.storm_motion)
+        positive_shear = mpcalc.bulk_shear(profile.pres, profile.u, profile.v, height=slice(0, 3000 * units.m))
+        srh = mpcalc.storm_relative_helicity(profile.u, profile.v, height, profile.storm_motion)
         total_totals = mpcalc.total_totals_index(profile.tmpc, profile.dwpc, profile.u, profile.v)
         # Assuming you have a function to calculate tropopause level 
         tropopause_level = mpcalc.calculate_tropopause_level(profile)
@@ -391,13 +392,13 @@ async def skewt(ctx, station_code: str):
         skew = SkewT(fig)
 
         # Pls plot
-        skew.plot(p, T, 'r')  # Temperature in red
-        skew.plot(p, Td, 'g')  # Dewpoint in green
-        skew.plot(p, wet_bulb, 'b', linestyle='--')  # Wet-bulb temperature in dashed blue
-        skew.plot_barbs(p[ix], u[ix], v[ix])  # Wind barbs 
+        skew.plot(profile.pres, profile.tempc, 'r')  # Temperature in red
+        skew.plot(profile.pres, profile.dwpc, 'g')  # Dewpoint in green
+        skew.plot(profile.pres, wet_bulb, 'b', linestyle='--')  # Wet-bulb temperature in dashed blue
+        skew.plot_barbs(profile.pres[::2], profile.u[::2], profile.v[::2])  # Wind barbs 
 
         # mush indices on skewT
-        plt.title(f'{station} {today} {profile.time[0].hour:02d}Z', weight='bold', size=20)
+        plt.title(f'{station_code} {today} {profile.time[0].hour:02d}Z', weight='bold', size=20)
         skew.ax.text(0.7, 0.1, f'CAPE: {cape.to("J/kg"):.0f}', transform=skew.ax.transAxes)
         skew.ax.text(0.7, 0.05, f'CIN: {cin.to("J/kg"):.0f}', transform=skew.ax.transAxes)
         skew.ax.text(0.7, 0.15, f'LIFTED INDEX: {lifted_index:.0f}', transform=skew.ax.transAxes)
@@ -424,7 +425,7 @@ async def skewt(ctx, station_code: str):
         h = Hodograph(ax_hod, component_range=80)  # Change range in windspeeds
         h.add_grid(increment=10)
         try:
-            h.plot_colormapped(u, v, height)
+            h.plot_colormapped(profile.u, profile.v, height)
  	 
         except ValueError as e:
             print(e) 
