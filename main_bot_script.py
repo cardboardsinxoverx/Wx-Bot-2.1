@@ -1483,5 +1483,25 @@ async def lightning(ctx, icao: str, radius: int = 5):
 
 #         **Usage: $lighting <icao> <distance(sm)>**
 #         """)
+
+# --- Meteogram Command --- 
+@bot.command()
+async def meteogram(ctx, icao: str, hoursback: str = None): 
+    """
+    Generates a meteogram for the given ICAO code.
+
+    Usage: $meteogram <icao> [hoursback]
+    - icao: The ICAO code of the station.
+    - hoursback (optional): The number of hours to look back for METAR data. Defaults to most recent if not provided.
+    """
+
+    try:
+        fname = meteogram(icao, hoursback)  # Call your existing meteogram function
+        await ctx.send(f'Meteogram for {icao} created.')
+        await ctx.send(file=discord.File(fname))  # Send the generated image
+    except Exception as e:
+        await ctx.send(f'Error generating meteogram: {e}')
+
+
 if __name__ == "__main__":
     bot.run(token=config.DISCORD_TOKEN)
