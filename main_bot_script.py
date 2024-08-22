@@ -783,7 +783,7 @@ async def radar(ctx, region: str = "chase", overlay: str = "base"):
         region = region.lower()
         overlay = overlay.lower()
 
-        valid_regions = ["chase", "ne", "se", "sw", "nw"]
+        valid_regions = ["chase", "ne", "se", "sw", "nw", "pr"]
         valid_overlays = ["base", "totals"]
 
         if region not in valid_regions:
@@ -1013,19 +1013,19 @@ async def ascat(ctx, storm_id: str = None):
 def extract_active_storms_global(html_content):
     """Parses the HTML content to extract a list of active storms across all basins."""
     soup = BeautifulSoup(html_content, 'html.parser')
-    active_storms_table = soup.find('table', {'class': 'global_active_storms_table'})  # Adjust the class name if needed
+    active_storms_table = soup.find('table', {'id': 'StormList'}) 
 
     if active_storms_table:
         storms = []
         for row in active_storms_table.find_all('tr')[1:]:  # Skip the header row
             columns = row.find_all('td')
-            if len(columns) >= 2:  # Ensure there are at least two columns (storm ID and basin)
+            if len(columns) >= 2: 
                 storm_id = columns[0].text.strip()
-                basin = columns[1].text.strip()  # Assuming the second column contains the basin
+                basin = columns[1].text.strip() 
                 storms.append({'id': storm_id, 'basin': basin})
         return storms
     else:
-        return []  # No active storms found
+        return []
 
 
 def extract_image_urls(soup):
