@@ -330,7 +330,7 @@ Fetches the latest TAF (terminal aerodrome forecast) for the specified airport.
 # more error handling fixes and put in logging info, also edited code to see if json data even exists before accessing it, but I'm tired of trying to fix the actual problem and the error handling problem at the same time.
 # i think simply fixing the error handling after this try is the best way forward, at least then it can tell you whats wrong. so yeah last stab at fixing the actual problem in TAF command - ln
 
-# --- SkewT Command --- 
+'''# --- SkewT Command --- 
 @bot.command()
 async def skewt(ctx, station_code: str):
     """Fetches sounding data and generates a Skew-T diagram with various indices."""
@@ -444,7 +444,124 @@ async def skewt(ctx, station_code: str):
 
 	# error handling
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
-        await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}. This could be happening for several reasons, such as network connection issues, timeout errors, data not being in the correct format, or the bot is requesting data it wasn't programmed to understand.")
+        await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}. This could be happening for several reasons, such as network connection issues, timeout errors, data not being in the correct format, or the bot is requesting data it wasn't programmed to understand.")'''
+
+# --- SkewT Command --- 
+@bot.command()
+async def skewt(ctx, station_code: str):
+    """Fetches sounding data and generates a Skew-T diagram with various indices."""
+
+    try:
+        station_code = station_code.upper()
+
+        # Get today's date 
+        now = datetime.datetime.today()
+
+        # Fetch sounding data
+        sounding_data = WyomingUpperAir.request_data(now, station_code)
+
+        # Handle case where sounding data is not found
+        if sounding_data is None or sounding_data.empty: 
+            raise ValueError("Sounding data not found. This is likely because the sounding balloon was not released. Please check a neighboring WMO or try again later.")
+
+        # Generate the Skew-T diagram using SHARPpy
+        profile = sharppy.Profile.from_sounding(sounding_data)
+
+        # Calculate indices 
+        cape, cin = mpcalc.cape_cin(profile)
+        lcl_pressure, lcl_temperature = mpcalc.lcl(profile.pres[0], profile.tmpc[0], profile.dwpc[0])
+        lfc_pressure, lfc_temperature = mpcalc.lfc(profile.pres, profile.tmpc, profile.dwpc)
+        el_pressure, el_temperature = mpcalc.el(profile.pres, profile.tmpc, profile.dwpc)
+        lifted_index = mpcalc.lifted_index(profile.pres, profile.tmpc, profile.dwpc)
+        pwat = mpcalc.precipitable_water(profile.pres, profile.dwpc)
+        ccl_pressure, ccl_temperature = mpcalc.ccl(profile.pres, profile.tmpc, profile.dwpc)
+        ehi = mpcalc.energy_helicity_index(profile.pres, profile.u, profile.v, profile.hght)
+        zero_c_level = mpcalc.find_intersections(profile.pres, profile.tmpc, 0 * units.degC)[0]
+        theta_e = mpcalc.equivalent_potential_temperature(profile.pres, profile.tmpc, profile.dwpc)
+        k_index = mpcalc.k_index(profile.pres, profile.tmpc, profile.dwpc)
+        mpl_pressure, mpl_temperature = mpcalc.mpl(profile.pres, profile.tmpc, profile.dwpc)
+        max_temp = mpcalc.max_temperature(profile.pres, profile.tmpc, profile.dwpc)
+        positive_shear = mpcalc.bulk_shear(profile.pres, profile.u, profile.v, height=slice(0, 3000 * units.m))
+        # Ensure 'height' and 'profile.storm_motion' are defined before using them in srh calculation
+        srh = mpcalc.storm_relative_helicity(profile.u, profile.v, height, profile.storm_motion)  
+        total_totals = mpcalc.total_totals_index(profile.tmpc, profile.dwpc, profile.u, profile.v)
+
+        # Calculate tropopause level 
+        tropopause_level = mpcalc.birner(profile.pres, profile.tmpc, height=True)
+
+        # Calculate wet-bulb temperature
+        wet_bulb = mpcalc.wet_bulb_temperature(profile.pres, profile.tmpc, profile.dwpc)
+
+        # Create the Skew-T plot
+        fig = plt.figure(figsize=(8, 8))
+        skew = SkewT(fig)
+
+        # Plot data
+        skew.plot(profile.pres, profile.tempc, 'r') 
+        skew.plot(profile.pres, profile.dwpc, 'g') 
+        skew.plot(profile.pres, wet_bulb, 'b', linestyle='--')
+        skew.plot_barbs(profile.pres[::2], profile.u[::2], profile.v[::2]) 
+
+        # Add indices to the plot
+        plt.title(f'{station_code} {now.strftime("%Y-%m-%dT%H")} {profile.time[0].hour:02d}Z', weight='bold', size=20)
+        skew.ax.text(0.7, 0.1, f'CAPE: {cape.to("J/kg"):.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.05, f'CIN: {cin.to("J/kg"):.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.15, f'LIFTED INDEX: {lifted_index:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.2, f'LCL: {lcl_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.25, f'LFC: {lfc_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.3, f'EL: {el_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.35, f'CCL: {ccl_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.4, f'EHI: {ehi:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.45, f'0C Level: {zero_c_level[0].to("hPa"):.0f} hPa, {zero_c_level[1].to("degC"):.0f} °C', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.5, f'PWAT: {pwat.to("inch"):.2f} in', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.55, f'K index: {k_index:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.6, f'MPL: {mpl_pressure.to("hPa").m:.0f} hPa', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.65, f'Max Temp: {max_temp.to("degC"):.0f} °C', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.7, f'0-3km Shear: {positive_shear[0].to("knots"):.0f} kts', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.75, f'SRH: {srh[0].to("m^2/s^2"):.0f} m^2/s^2', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.8, f'Total Totals: {total_totals:.0f}', transform=skew.ax.transAxes)
+        skew.ax.text(0.7, 0.85, f'Tropopause: {tropopause_level:.1f} km', transform=skew.ax.transAxes) 
+	
+	    # Set units for variables
+        height = profile.height * units.meter
+
+        # Check and handle storm_motion
+        if hasattr(profile, 'storm_motion') and profile.storm_motion is not None:
+            storm_u, storm_v = profile.storm_motion
+        else:
+            storm_u = 0 * units.meter / units.second
+            storm_v = 0 * units.meter / units.second
+        await ctx.send("Warning: Storm motion information not found in sounding data. Assuming stationary storm for SRH calculation.") 
+
+         # Calculate SRH 
+        srh = mpcalc.storm_relative_helicity(profile.u, profile.v, height, storm_u=storm_u, storm_v=storm_v)
+
+
+        # Add hodograph
+        ax_hod = inset_axes(skew.ax, '25%', '20%', loc='upper left')
+        h = Hodograph(ax_hod, component_range=80) 
+        h.add_grid(increment=10)
+        try:
+            h.plot_colormapped(profile.u, profile.v, height)
+        except ValueError as e:
+            print(e) 
+
+        # Save and send the Skew-T diagram 
+        temp_image_path = f"skewt_{station_code}_observed.png"
+        plt.savefig(temp_image_path, format='png')
+        plt.close(fig)
+        await ctx.send(file=discord.File(temp_image_path))
+        os.remove(temp_image_path)
+
+    # Enhanced error handling
+    except requests.exceptions.RequestException as e:
+        await ctx.send(f"Error fetching sounding data for {station_code}: {e}. Please check your network connection or try again later.")
+    except AttributeError as e:
+        await ctx.send(f"Error processing sounding data for {station_code}: {e}. The data might be incomplete or in an unexpected format.")
+    except ValueError as e:
+        await ctx.send(e)  # Display the specific ValueError message to the user
+    except Exception as e:
+        await ctx.send(f"An unexpected error occurred while generating the Skew-T for {station_code}: {e}")
 	    
 # --- Satellite Command ---
 @bot.command()
