@@ -1506,7 +1506,7 @@ async def meteogram(ctx, icao: str, hoursback: str = None):
     """
 
     try:
-        fname = meteogram(icao, hoursback)  # Call your existing meteogram function
+        fname = await meteogram(icao, hoursback)  # Call your existing meteogram function
         await ctx.send(f'Meteogram for {icao} created.')
         await ctx.send(file=discord.File(fname))  # Send the generated image
     except Exception as e:
