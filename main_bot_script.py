@@ -448,14 +448,26 @@ async def skewt(ctx, station_code: str):
 
 # --- SkewT Command --- 
 @bot.command()
-async def skewt(ctx, station_code: str):
-    """Fetches sounding data and generates a Skew-T diagram with various indices."""
+async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
+    """Fetches 12Z or 00Z sounding data and generates a Skew-T diagram with various indices."""
 
     try:
         station_code = station_code.upper()
+        sounding_time = sounding_time.upper()  # Make sure the input is uppercase
 
         # Get today's date 
-        now = datetime.datetime.today()
+        today = datetime.datetime.today()
+
+        # Set sounding time based on user input
+        if sounding_time == "12Z":
+            now = datetime.datetime(today.year, today.month, today.day, 12, 0, 0, tzinfo=pytz.UTC)
+        elif sounding_time == "00Z":
+            # Handle the case where 00Z might be from the previous day
+            if today.hour < 12:  # If it's before 12 PM local time, 00Z is from yesterday
+                today -= datetime.timedelta(days=1)
+            now = datetime.datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=pytz.UTC)
+        else:
+            raise ValueError("Invalid sounding time. Please choose either '12Z' or '00Z'.")
 
         # Fetch sounding data
         sounding_data = WyomingUpperAir.request_data(now, station_code)
