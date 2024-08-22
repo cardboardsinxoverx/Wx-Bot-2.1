@@ -1495,7 +1495,7 @@ async def lightning(ctx, icao: str, radius: int = 5):
 #         """)
 
 # --- Meteogram Command --- 
-@bot.command()
+'''@bot.command()
 async def meteogram(ctx, icao: str, hoursback: str = None): 
     """
     Generates a meteogram for the given ICAO code.
@@ -1512,7 +1512,7 @@ async def meteogram(ctx, icao: str, hoursback: str = None):
     except ValueError as e:
         await ctx.send(f"Can't calculate wet bulb for {icao}")
     except Exception as e:
-        await ctx.send(f'Error generating meteogram for {icao}: {e}')
+        await ctx.send(f'Error generating meteogram for {icao}: {e}')'''
 
 if __name__ == "__main__":
     bot.run(token=config.DISCORD_TOKEN)
