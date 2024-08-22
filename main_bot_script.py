@@ -482,8 +482,6 @@ async def skewt(ctx, station_code: str):
         mpl_pressure, mpl_temperature = mpcalc.mpl(profile.pres, profile.tmpc, profile.dwpc)
         max_temp = mpcalc.max_temperature(profile.pres, profile.tmpc, profile.dwpc)
         positive_shear = mpcalc.bulk_shear(profile.pres, profile.u, profile.v, height=slice(0, 3000 * units.m))
-        # Ensure 'height' and 'profile.storm_motion' are defined before using them in srh calculation
-        srh = mpcalc.storm_relative_helicity(profile.u, profile.v, height, profile.storm_motion)  
         total_totals = mpcalc.total_totals_index(profile.tmpc, profile.dwpc, profile.u, profile.v)
 
         # Calculate tropopause level 
@@ -534,7 +532,7 @@ async def skewt(ctx, station_code: str):
         await ctx.send("Warning: Storm motion information not found in sounding data. Assuming stationary storm for SRH calculation.") 
 
          # Calculate SRH 
-        srh = mpcalc.storm_relative_helicity(profile.u, profile.v, height, storm_u=storm_u, storm_v=storm_v)
+        srh = mpcalc.storm_relative_helicity(profile.u, profile.v, height, storm_u=storm_u, storm_v=storm_v) # Ensure 'height' and 'profile.storm_motion' are defined before using them in srh calculation
 
 
         # Add hodograph
