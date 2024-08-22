@@ -802,6 +802,8 @@ async def radar(ctx, region: str = "chase", overlay: str = "base"):
             ("sw", "totals"): "https://tempest.aos.wisc.edu/radar/swPcomp.gif",
             ("nw", "base"): "https://tempest.aos.wisc.edu/radar/nw3comp.gif",
             ("nw", "totals"): "https://tempest.aos.wisc.edu/radar/nwPcomp.gif",
+	    ("pr", "base"): "https://tempest.aos.wisc.edu/radar/pr3comp.gif",  # Added PR base link
+            ("pr", "totals"): "https://tempest.aos.wisc.edu/radar/prPcomp.gif"  # Added PR totals link
         }
 
         # Get the image URL based on region and overlay
@@ -890,7 +892,7 @@ def add_map_overlay(ax, lat=None, lon=None, icon_path=None, logo_path="https://g
 # ens before this works, the file names and source maybe for it? needs to be correct. this was just some generic code written with "logo.png". I dont know what the bots avatar's name is and if this just isn't possible or its just too silly, then I'll revert the code. I just thought you'd be able to make it work from here 
 
 # --- ASCAT Command ---
-@bot.command()
+'''@bot.command()
 async def ascat(ctx, storm_id: str = None):
     """Fetches ASCAT images for the specified storm from FNMOC. If no storm_id is provided, it will list the active storms."""
 
@@ -951,21 +953,10 @@ def extract_image_urls(soup):
     """Parses the BeautifulSoup object (soup) to extract a list of image URLs."""
     image_tags = soup.find_all('img', {'class': 'product_image'})
     base_url = "https://www.fnmoc.navy.mil" 
-    return [base_url + img['src'] for img in image_tags]
-
-ascat.help = """
-**$ascat [storm_id]**
-
-Fetches ASCAT (Advanced Scatterometer) images for the specified storm from the Fleet Numerical Meteorology and Oceanography Center (FNMOC).
-
-**Arguments:**
-
-*   `storm_id` (optional): The ID of the storm (e.g., '05L'). If not provided, the bot will list currently active storms.
-"""
-
+    return [base_url + img['src'] for img in image_tags]'''
 # working ASCAT command for Atlantic Basin
 
-'''# --- ASCAT Command ---
+# --- ASCAT Command ---
 @bot.command()
 async def ascat(ctx, storm_id: str = None):
     """Fetches ASCAT images for the specified storm from FNMOC across all basins."""
@@ -1040,7 +1031,17 @@ def extract_image_urls(soup):
     """Parses the BeautifulSoup object (soup) to extract a list of image URLs."""
     image_tags = soup.find_all('img', {'class': 'product_image'})
     base_url = "https://www.fnmoc.navy.mil" 
-    return [base_url + img['src'] for img in image_tags]'''
+    return [base_url + img['src'] for img in image_tags]
+
+ascat.help = """
+**$ascat [storm_id]**
+
+Fetches ASCAT (Advanced Scatterometer) images for the specified storm from the Fleet Numerical Meteorology and Oceanography Center (FNMOC).
+
+**Arguments:**
+
+*   `storm_id` (optional): The ID of the storm (e.g., '05L'). If not provided, the bot will list currently active storms.
+"""
 # future ASCAT command for global storms
 
 # --- Alerts Command --- 
