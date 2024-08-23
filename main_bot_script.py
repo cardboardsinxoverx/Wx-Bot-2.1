@@ -1497,44 +1497,32 @@ async def lightning(ctx, icao: str, radius: int = 5):
 #         """)
 
 # --- Meteogram Command --- 
-async def get_metar_meteogram(icao, hoursback=None):
+async def get_metar_data(icao, hoursback=None):
     """
-    Asynchronously download METAR from the NOAA Avation Weather Center
-
-    Parameters
-    ----------
-    icao : str
-        ICAO identifier used when reporting METARs
-    hoursback : str or int
-        Number of hours before present to query
-
-    Returns
-    ----------
-    obs : str
-        str with each observation   
- as a separate line (\n)
+    Asynchronously fetches METAR data from the NOAA Aviation Weather Center.
     """
-
     if hoursback:
-        metar_url = f'https://www.aviationweather.gov/metar/data?ids={icao}&format=raw&date=&hours={hoursback}&taf=off'
+        metar_url = f'https://aviationweather.gov/data/metar/?id={icao}&hours={hoursback}'
+        
     else:
-        metar_url = f'https://www.aviationweather.gov/metar/data?ids={icao}&format=raw&date=&hours=0&taf=off'
-
+        metar_url = f'https://aviationweather.gov/data/metar/?id={icao}&hours=0'
 
     async with aiohttp.ClientSession() as session:
         async with session.get(metar_url) as response:
-            src = await response.text()  # Get the response content as text
+            if response.status != 200:
+                raise ValueError(f"Failed to fetch METAR data for {icao}. Status code: {response.status}")
+            src = await response.text()
 
     soup = BeautifulSoup(src, "html.parser")
     metar_data = soup.find(id='awc_main_content_wrap')
-
+    
     obs = ''
     for i in metar_data:
         if str(i).startswith('<code>'):
             line = str(i).lstrip('<code>').rstrip('</code>')
             obs += line
             obs += '\n'
-    return obs
+    return obs 1 
 
 async def generate_meteogram_image(icao, hoursback):
     """
@@ -1542,52 +1530,52 @@ async def generate_meteogram_image(icao, hoursback):
     """
 
     try:
-        # 1. Fetch METAR data (replace with your actual async function)
-        metar_data = await get_metar_meteogram(icao, hoursback)  # Assuming you have an async version of get_metar_meteogram
+        # 1. Fetch METAR data
+        metar_data = await get_metar_data(icao, hoursback) 
 
-        # 2. Process and analyze METAR data (replace with your actual code)
+        # 2. Process and analyze METAR data
         txt = metar_data.split('\n')[:-1]
+        if not txt:  # Check if any METAR data was found
+            raise ValueError(f"No METAR data found for {icao}.")
+
         df = parse_metar_to_dataframe(txt[-1])
         for row in txt[::-1]:
             df = df.append(parse_metar_to_dataframe(row))
 
-        # 3. Generate the meteogram plot (replace with your actual code)
+        # ... (Rest of your data processing and calculations)
+
+        # 3. Generate the meteogram plot 
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(18, 18), dpi=150, sharex=True)
+        # ... (Your plotting code)
 
         # 4. Save the plot as an image
         temp_image_path = f"meteogram_{icao}.png"
         plt.savefig(temp_image_path, bbox_inches='tight')
-        plt.close(fig)
+        plt.close(fig) 
 
         return temp_image_path
 
     except Exception as e:
-        # Handle any errors that might occur during the process
-        print(f"Error generating meteogram image: {e}")
+        print(f"Error generating meteogram image for {icao}: {e}")
         return None
-	    
+
 @bot.command()
 async def meteogram(ctx, icao: str, hoursback: str = None):
     """
     Generates a meteogram for the given ICAO code.
-
-    Usage: $meteogram <icao> [hoursback]
-    - icao: The ICAO code of the station.
-    - hoursback (optional): The number of hours to look back for METAR data. Defaults to most recent if not provided.
     """
 
     try:
-        fname = await generate_meteogram_image(icao, hoursback) 
+        fname = await generate_meteogram_image(icao, hoursback)
 
         if fname is None or not os.path.exists(fname):
             await ctx.send(f"Failed to generate meteogram for {icao}.")
-            return  # Exit the function early if there's an error
-
-        await ctx.send(f'Meteogram for {icao} created.')
-        await ctx.send(file=discord.File(fname))
+        else:
+            await ctx.send(f'Meteogram for {icao} created.')
+            await ctx.send(file=discord.File(fname))
 
     except ValueError as e:
-        await ctx.send(f"Can't calculate wet bulb for {icao}")
+        await ctx.send(str(e))  # Send the specific error message
     except Exception as e:
         await ctx.send(f'Error generating meteogram for {icao}: {e}')
 	    
