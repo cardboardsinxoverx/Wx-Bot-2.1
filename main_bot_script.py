@@ -1495,6 +1495,39 @@ async def lightning(ctx, icao: str, radius: int = 5):
 #         """)
 
 # --- Meteogram Command --- 
+async def generate_meteogram_image(icao, hoursback):
+    """
+    Generates a meteogram image for the given ICAO code and time range.
+    """
+
+    try:
+        # 1. Fetch METAR data (replace with your actual async function)
+        metar_data = await get_metar_meteogram(icao, hoursback)  # Assuming you have an async version of get_metar_meteogram
+
+        # 2. Process and analyze METAR data (replace with your actual code)
+        txt = metar_data.split('\n')[:-1]
+        df = parse_metar_to_dataframe(txt[-1])
+        for row in txt[::-1]:
+            df = df.append(parse_metar_to_dataframe(row))
+
+        # ... (Rest of your data processing and calculations from the meteogram function)
+
+        # 3. Generate the meteogram plot (replace with your actual code)
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(18, 18), dpi=150, sharex=True)
+        # ... (Rest of your plotting code from the meteogram function)
+
+        # 4. Save the plot as an image
+        temp_image_path = f"meteogram_{icao}.png"
+        plt.savefig(temp_image_path, bbox_inches='tight')
+        plt.close(fig)
+
+        return temp_image_path
+
+    except Exception as e:
+        # Handle any errors that might occur during the process
+        print(f"Error generating meteogram image: {e}")
+        return None
+	    
 @bot.command()
 async def meteogram(ctx, icao: str, hoursback: str = None):
     """
