@@ -1508,16 +1508,17 @@ async def meteogram(ctx, icao: str, hoursback: str = None):
     try:
         fname = await generate_meteogram_image(icao, hoursback) 
 
-        if fname and os.path.exists(fname):
-            await ctx.send(f'Meteogram for {icao} created.')
-            await ctx.send(file=discord.File(fname)) 
-        else:
-            raise ValueError(f"Failed to generate meteogram for {icao}.")
+        if fname is None or not os.path.exists(fname):
+            await ctx.send(f"Failed to generate meteogram for {icao}.")
+            return  # Exit the function early if there's an error
+
+        await ctx.send(f'Meteogram for {icao} created.')
+        await ctx.send(file=discord.File(fname))
 
     except ValueError as e:
         await ctx.send(f"Can't calculate wet bulb for {icao}")
     except Exception as e:
         await ctx.send(f'Error generating meteogram for {icao}: {e}')
-
+	    
 if __name__ == "__main__":
     bot.run(token=config.DISCORD_TOKEN)
