@@ -1496,7 +1496,7 @@ async def lightning(ctx, icao: str, radius: int = 5):
 
 # --- Meteogram Command --- 
 @bot.command()
-async def meteogram(ctx, icao: str, hoursback: str = None): 
+async def meteogram(ctx, icao: str, hoursback: str = None):
     """
     Generates a meteogram for the given ICAO code.
 
@@ -1506,14 +1506,13 @@ async def meteogram(ctx, icao: str, hoursback: str = None):
     """
 
     try:
-        fname = meteogram(ctx, icao, hoursback)  # Pass ctx to meteogram
+        fname = await generate_meteogram_image(icao, hoursback) 
 
-        # Check if fname is valid after getting it from meteogram
-        if fname is None or not os.path.exists(fname):
+        if fname and os.path.exists(fname):
+            await ctx.send(f'Meteogram for {icao} created.')
+            await ctx.send(file=discord.File(fname)) 
+        else:
             raise ValueError(f"Failed to generate meteogram for {icao}.")
-
-        await ctx.send(f'Meteogram for {icao} created.')
-        await ctx.send(file=discord.File(fname))  # Send the generated image
 
     except ValueError as e:
         await ctx.send(f"Can't calculate wet bulb for {icao}")
