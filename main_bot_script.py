@@ -54,6 +54,8 @@ import xarray as xr
 # import openmeteo_requests
 # from openmeteo_py import Hourly, Options
 # import airportsdata
+import aiohttp
+import asyncio
 
 # def save_cache(cache_type, data):
 #     with open(f"{cache_type}_cache.json", "w") as f:
@@ -1495,6 +1497,46 @@ async def lightning(ctx, icao: str, radius: int = 5):
 #         """)
 
 # --- Meteogram Command --- 
+@bot.command()
+async def get_metar_meteogram(icao, hoursback=None):
+    """
+    Asynchronously download METAR from the NOAA Avation Weather Center
+
+    Parameters
+    ----------
+    icao : str
+        ICAO identifier used when reporting METARs
+    hoursback : str or int
+        Number of hours before present to query
+
+    Returns
+    ----------
+    obs : str
+        str with each observation   
+ as a separate line (\n)
+    """
+
+    if hoursback:
+        metar_url = f'https://www.aviationweather.gov/metar/data?ids={icao}&format=raw&date=&hours={hoursback}&taf=off'
+    else:
+        metar_url = f'https://www.aviationweather.gov/metar/data?ids={icao}&format=raw&date=&hours=0&taf=off'
+
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(metar_url) as response:
+            src = await response.text()  # Get the response content as text
+
+    soup = BeautifulSoup(src, "html.parser")
+    metar_data = soup.find(id='awc_main_content_wrap')
+
+    obs = ''
+    for i in metar_data:
+        if str(i).startswith('<code>'):
+            line = str(i).lstrip('<code>').rstrip('</code>')
+            obs += line
+            obs += '\n'
+    return obs
+
 async def generate_meteogram_image(icao, hoursback):
     """
     Generates a meteogram image for the given ICAO code and time range.
@@ -1527,8 +1569,7 @@ async def generate_meteogram_image(icao, hoursback):
         # Handle any errors that might occur during the process
         print(f"Error generating meteogram image: {e}")
         return None
-	    
-@bot.command()
+
 async def meteogram(ctx, icao: str, hoursback: str = None):
     """
     Generates a meteogram for the given ICAO code.
