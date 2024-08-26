@@ -1582,13 +1582,12 @@ async def meteogram(ctx, icao: str, hoursback: str = None):
 # --- Time Command ---
 @bot.command(name='utc')
 async def worldtimes(ctx):
-  # Create an embed
+  
   embed = discord.Embed(title="**Time Zones**", color=0x007F00)
 
-  # Get current UTC time
   utc_now = pytz.utc.localize(datetime.datetime.utcnow())
 
-  # Define US time zones
+  # define time zones
   us_timezones = {
       "Hawaii": "Pacific/Honolulu",
       "Alaska": "America/Anchorage",
@@ -1599,8 +1598,7 @@ async def worldtimes(ctx):
 
   }
 
-  # Other time zones
-  other_timezones = {
+  international_timezones = {
       "London": "Europe/London",
       "Berlin": "Europe/Berlin",
       "Tokyo": "Asia/Tokyo",
@@ -1611,7 +1609,7 @@ async def worldtimes(ctx):
       "Beijing": "Asia/Shanghai"
   }
 
-  # Add times to the embed
+#add the times to the embed
   for region, timezone_str in us_timezones.items():
       timezone = pytz.timezone(timezone_str)
       local_time = utc_now.astimezone(timezone)
@@ -1622,7 +1620,6 @@ async def worldtimes(ctx):
       local_time = utc_now.astimezone(timezone)
       embed.add_field(name=city, value=local_time.strftime('%H:%M:%S'), inline=True)
 
-  # Send the embed
   await ctx.send(embed=embed)
 	    
 if __name__ == "__main__":
