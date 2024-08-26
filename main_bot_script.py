@@ -1633,7 +1633,7 @@ async def forecast(ctx, *, location: str):
     data = response.json()
 
     if data['cod'] == '200':
-        embed = discord.Embed(title=f"Weather Forecast for {data['city']['name']}", color=0x00ff00)
+        embed = discord.Embed(title=f"Weather Forecast for {data['city']['name']}", color=0x007F00)
         for forecast in data['list'][:4]:  # Get forecast for the next few days (adjust as needed)
             timestamp = forecast['dt']
             date = datetime.datetime.fromtimestamp(timestamp).strftime('%A, %B %d')
@@ -1655,7 +1655,7 @@ async def airquality(ctx, *, location: str):
     if data['cod'] == '200':
         aqi = data['list'][0]['main']['aqi']
         components = data['list'][0]['components']
-        embed = discord.Embed(title=f"Air Quality in {location}", color=0x00ff00)
+        embed = discord.Embed(title=f"Air Quality in {location}", color=0x007F00)
         embed.add_field(name="AQI", value=aqi, inline=True)
         embed.add_field(name="Main Pollutants", value=", ".join(f"{k}: {v}" for k, v in components.items()), inline=False)
         await ctx.send(embed=embed)
