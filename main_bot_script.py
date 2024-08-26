@@ -1578,6 +1578,52 @@ async def meteogram(ctx, icao: str, hoursback: str = None):
         await ctx.send(str(e))  # Send the specific error message
     except Exception as e:
         await ctx.send(f'Error generating meteogram for {icao}: {e}')
+
+# --- Time Command ---
+@bot.command(name='utc')
+async def worldtimes(ctx):
+  # Create an embed
+  embed = discord.Embed(title="**Time Zones**", color=0x007F00)
+
+  # Get current UTC time
+  utc_now = pytz.utc.localize(datetime.datetime.utcnow())
+
+  # Define US time zones
+  us_timezones = {
+      "Hawaii": "Pacific/Honolulu",
+      "Alaska": "America/Anchorage",
+      "Pacific": "America/Los_Angeles",
+      "Mountain": "America/Denver",
+      "Central": "America/Chicago",
+      "Eastern": "America/New_York"
+
+  }
+
+  # Other time zones
+  other_timezones = {
+      "London": "Europe/London",
+      "Berlin": "Europe/Berlin",
+      "Tokyo": "Asia/Tokyo",
+      "Sydney": "Australia/Sydney",
+      "Tehran (Iran)": "Asia/Tehran",
+      "Jerusalem (Israel)": "Asia/Jerusalem",
+      "Moscow": "Europe/Moscow",
+      "Beijing": "Asia/Shanghai"
+  }
+
+  # Add times to the embed
+  for region, timezone_str in us_timezones.items():
+      timezone = pytz.timezone(timezone_str)
+      local_time = utc_now.astimezone(timezone)
+      embed.add_field(name=f"{region} (US)", value=local_time.strftime('%H:%M:%S'), inline=True)
+
+  for city, timezone_str in other_timezones.items():
+      timezone = pytz.timezone(timezone_str)
+      local_time = utc_now.astimezone(timezone)
+      embed.add_field(name=city, value=local_time.strftime('%H:%M:%S'), inline=True)
+
+  # Send the embed
+  await ctx.send(embed=embed)
 	    
 if __name__ == "__main__":
     bot.run(token=config.DISCORD_TOKEN)
