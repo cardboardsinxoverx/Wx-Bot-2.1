@@ -85,6 +85,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 
+OPENWEATHERMAP_API_KEY = 'efd4f5ec6d2b16958a946b2ceb0419a6'
+
 @bot.event
 async def on_ready():
     print(f'We have logged in as {bot.user}')
@@ -1621,6 +1623,44 @@ async def worldtimes(ctx):
       embed.add_field(name=city, value=local_time.strftime('%H:%M:%S'), inline=True)
 
   await ctx.send(embed=embed)
+
+# --- Fcst Command --- 
+@bot.command()
+async def forecast(ctx, *, location: str):
+    """Provides a weather forecast for the next few days for a given location."""
+    url = f'https://api.openweathermap.org/data/2.5/forecast?q={location}&appid={OPENWEATHERMAP_API_KEY}&units=imperial'  # Assuming you want Fahrenheit
+    response = requests.get(url)
+    data = response.json()
+
+    if data['cod'] == '200':
+        embed = discord.Embed(title=f"Weather Forecast for {data['city']['name']}", color=0x00ff00)
+        for forecast in data['list'][:4]:  # Get forecast for the next few days (adjust as needed)
+            timestamp = forecast['dt']
+            date = datetime.datetime.fromtimestamp(timestamp).strftime('%A, %B %d')
+            temperature = forecast['main']['temp']
+            condition = forecast['weather'][0]['description']
+            embed.add_field(name=date, value=f"Temperature: {temperature}°F\nCondition: {condition}", inline=False)
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"dad dammit")
+
+# --- Air Sucks Command --- 
+@bot.command()
+async def airquality(ctx, *, location: str):
+    """Shows the air quality index (AQI) and related information for a specific location."""
+    url = f'https://api.openweathermap.org/data/2.5/air_pollution?q={location}&appid={OPENWEATHERMAP_API_KEY}'
+    response = requests.get(url)
+    data = response.json()
+
+    if data['cod'] == '200':
+        aqi = data['list'][0]['main']['aqi']
+        components = data['list'][0]['components']
+        embed = discord.Embed(title=f"Air Quality in {location}", color=0x00ff00)
+        embed.add_field(name="AQI", value=aqi, inline=True)
+        embed.add_field(name="Main Pollutants", value=", ".join(f"{k}: {v}" for k, v in components.items()), inline=False)
+        await ctx.send(embed=embed)
+    else:
+        await ctx.send(f"dad dammit")
 	    
 if __name__ == "__main__":
     bot.run(token=config.DISCORD_TOKEN)
