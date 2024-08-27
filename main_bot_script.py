@@ -1524,7 +1524,7 @@ async def get_metar_data(icao, hoursback=None):
             line = str(i).lstrip('<code>').rstrip('</code>')
             obs += line
             obs += '\n'
-    return obs 1 
+    return obs, 1 
 
 async def generate_meteogram_image(icao, hoursback):
     """
