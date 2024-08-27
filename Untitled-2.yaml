@@ -1,0 +1,7 @@
+# .upsun/upsun.yml
+applications:
+  ohh:  # Replace 'myapp' with a suitable name for your app
+    type: python:3.11  # Specify the Python version you're using (e.g., 3.9, 3.10)
+    web:
+      commands:
+        start: main_bot_script.py  # Replace 'app.py' with the actual filename of your Python script
