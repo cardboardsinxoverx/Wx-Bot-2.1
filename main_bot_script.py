@@ -1185,14 +1185,13 @@ async def alerts(ctx, state_abbr: str = None):
         state_abbr = state_abbr.upper() if state_abbr else None  # Handle potential None value and ensure uppercase
 
         if state_abbr:
-            alerts_url = f"https://api.weather.gov/alerts/active?area={state_abbr}" 
+            alerts_url = f"https://api.weather.gov/alerts/active?area={state_abbr}"
         else:
-            # Handle case where state abbreviation is not provided 
-            if not state_abbr:
-               
-                pass  # Placeholder for getting user's location
+            state_abbr = await get_user_location(ctx) 
+            if state_abbr:
+                alerts_url = f"https://api.weather.gov/alerts/active?area={state_abbr}"
             else:
-                await ctx.send("Invalid state abbreviation. Please provide a two-letter state abbreviation (e.g., 'GA' for Georgia).")
+                await ctx.send("Unable to determine your location. Please provide a two-letter state abbreviation.")
                 return
 
         print(f"Fetching alerts from: {alerts_url}") 
@@ -1214,12 +1213,14 @@ async def alerts(ctx, state_abbr: str = None):
                 embed.add_field(name="Severity", value=properties['severity'], inline=True)
                 embed.add_field(name="Effective", value=properties['onset'], inline=True)
                 embed.add_field(name="Expires", value=properties['expires'], inline=True)
-                embed.add_field(name="Area", value=", ".join(properties['areaDesc']), inline=False)
+
+                # Clean up and format the area descriptions
+                cleaned_area_desc = [area.strip() for area in properties['areaDesc'] if area.strip()]
+                area_desc = "; ".join(cleaned_area_desc) 
+                embed.add_field(name="Area", value=area_desc, inline=False)
+
                 embed.add_field(name="Description", value=properties['description'], inline=False)
                 embed.add_field(name="Instructions", value=properties['instruction'] or "None", inline=False)
-		# Handle potential commas within area descriptions
-                #area_desc = "; ".join(properties['areaDesc'])  # Use semicolon as a separator, remove before restarting server pls
-		#embed.add_field(name="Area", value=area_desc, inline=False)
                 await ctx.send(embed=embed)
         else:
             await ctx.send("No weather alerts found for the specified state.")
