@@ -10,7 +10,7 @@ import discord
 from discord.ext import commands
 import requests
 import urllib3
-# import openmeteo_py
+import openmeteo_py
 import datetime
 import pytz
 from bs4 import BeautifulSoup  # Instead of 'import BeautifulSoup'
@@ -19,9 +19,7 @@ import matplotlib
 matplotlib.use('Agg')
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import matplotlib.pyplot as plt
-import sharppy
-import sharppy.plot.skew as skew
-# import cartopy
+import cartopy
 import cartopy.crs as ccrs
 import os
 import json
@@ -36,11 +34,11 @@ import PIL
 from PIL import Image
 import numpy as np
 import pandas as pd
-# import geocoder
+import geocoder
 import json
 import psutil
 import config
-# import signal
+import signal
 import math
 from siphon.simplewebservice.wyoming import WyomingUpperAir
 import metpy
@@ -49,11 +47,11 @@ import metpy.calc as mpcalc
 from metpy.plots import add_metpy_logo, SkewT, Hodograph
 import xarray as xr
 # import requests_cache
-# from openmeteo_py import Options,OWmanager
+from openmeteo_py import Options,OWmanager
 # from retry import retry
-# import openmeteo_requests
-# from openmeteo_py import Hourly, Options
-# import airportsdata
+import openmeteo_requests
+from openmeteo_py import Hourly, Options
+import airportsdata
 import aiohttp
 import asyncio
 
@@ -450,16 +448,16 @@ async def skewt(ctx, station_code: str):
     except (requests.exceptions.RequestException, AttributeError, ValueError) as e:
         await ctx.send(f"Error retrieving/parsing Skew-T data for {station_code}: {e}. This could be happening for several reasons, such as network connection issues, timeout errors, data not being in the correct format, or the bot is requesting data it wasn't programmed to understand.")'''
 
-# --- SkewT Command --- 
+# --- SkewT Command ---
 @bot.command()
 async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
-    """Fetches 12Z or 00Z sounding data and generates a Skew-T diagram with various indices."""
+    """Fetches 12Z or 00Z sounding data and generates a Skew-T diagram."""  # Updated docstring
 
     try:
         station_code = station_code.upper()
-        sounding_time = sounding_time.upper()  # Make sure the input is uppercase
+        sounding_time = sounding_time.upper()
 
-        # Get today's date 
+        # Get today's date
         today = datetime.datetime.today()
 
         # Set sounding time based on user input
@@ -477,7 +475,7 @@ async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
         sounding_data = WyomingUpperAir.request_data(now, station_code)
 
         # Handle case where sounding data is not found
-        if sounding_data is None or sounding_data.empty: 
+        if sounding_data is None or sounding_data.empty:
             raise ValueError("Sounding data not found. This is likely because the sounding balloon was not released. Please check a neighboring WMO or try again later.")
 
         # Convert sounding data to MetPy units
@@ -488,28 +486,6 @@ async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
         v = sounding_data['v_wind'].values * units.knots
         hght = sounding_data['height'].values * units.meter
 
-        # Calculate indices and other parameters using MetPy
-        parcel_profile = mpcalc.parcel_profile(p, T[0], Td[0])
-        cape, cin = mpcalc.cape_cin(p, T, Td, parcel_profile)
-        lcl_pressure, lcl_temperature = mpcalc.lcl(p[0], T[0], Td[0])
-        lfc_pressure, lfc_temperature = mpcalc.lfc(p, T, Td)
-        el_pressure, el_temperature = mpcalc.el(p, T, Td)
-        lifted_index = mpcalc.lifted_index(p, T, Td)
-        pwat = mpcalc.precipitable_water(p, Td)
-        ccl_pressure, ccl_temperature = mpcalc.ccl(p, T, Td)
-        ehi = mpcalc.energy_helicity_index(p, u, v, hght)  # Make sure 'hght' is defined
-        zero_c_level = mpcalc.find_intersections(p, T, 0 * units.degC)[0]
-        # theta_e = mpcalc.equivalent_potential_temperature(p, T, Td)  # Already calculated in parcel_profile
-        k_index = mpcalc.k_index(p, T, Td)
-        mpl_pressure, mpl_temperature = mpcalc.most_unstable_parcel(p, T, Td)
-        max_temp = mpcalc.max_temperature(p, T, Td)
-        positive_shear = mpcalc.bulk_shear(p, u, v, height=slice(0, 3000 * units.m))
-        total_totals = mpcalc.total_totals_index(T, Td, u, v)
-
-        # Calculate tropopause level 
-        tropopause_level = mpcalc.tropopause_level(p, T, hght)
-        tropopause_level_km = tropopause_level.to('km')
-
         # Calculate wet-bulb temperature
         wet_bulb = mpcalc.wet_bulb_temperature(p, T, Td)
 
@@ -518,26 +494,28 @@ async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
         skew = SkewT(fig)
         skew.plot(p, T, 'r')
         skew.plot(p, Td, 'g')
+        skew.plot(p, wet_bulb, 'b', linestyle='--')  
         skew.plot_barbs(p, u, v)
         skew.ax.set_ylim(1000, 100)
         skew.ax.set_xlim(-40, 60)
 
         # Add the parcel profile
-        skew.plot(parcel_profile, 'k', linewidth=2)
+        skew.plot(parcel_profile, 'k', linewidth=2)  # Add the parcel path
 
         # Shade areas of CAPE and CIN
         skew.shade_cape(p, T, parcel_profile)
         skew.shade_cin(p, T, parcel_profile)
 
         # Add labels and title
-        plt.title(f'{station_code} {now.strftime("%Y-%m-%dT%H")} {sounding_data.index[0].hour:02d}Z', weight='bold', size=14)
+        plt.title(f'{station_code} {now.strftime("%Y-%m-%d %HZ")}', weight='bold', size=14, color='#556B2F')
 
         # Add indices to the plot
-        skew.ax.text(0.7, 0.1, f'CAPE: {cape.to("J/kg"):.0f}', transform=skew.ax.transAxes)
-        skew.ax.text(0.7, 0.05, f'CIN: {cin.to("J/kg"):.0f}', transform=skew.ax.transAxes)
-        # ... add other indices in a similar way ...
+        #skew.ax.text(0.7, 0.1, f'CAPE: {cape.to("J/kg"):.0f} J/kg', transform=skew.ax.transAxes)
+       # skew.ax.text(0.7, 0.05, f'CIN: {cin.to("J/kg"):.0f} J/kg', transform=skew.ax.transAxes)
+       # skew.ax.text(0.7, 0.15, f'LIFTED INDEX: {lifted_index:.0f}', transform=skew.ax.transAxes)
+       # skew.ax.text(0.7, 0.2, f'PWAT: {pwat.to("inch"):.2f} in', transform=skew.ax.transAxes)
 
-        # Save and send the Skew-T diagram 
+        # Save and send the Skew-T diagram
         temp_image_path = f"skewt_{station_code}_observed.png"
         plt.savefig(temp_image_path, format='png')
         plt.close(fig)
@@ -550,9 +528,12 @@ async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
     except AttributeError as e:
         await ctx.send(f"Error processing sounding data for {station_code}: {e}. The data might be incomplete or in an unexpected format.")
     except ValueError as e:
-        await ctx.send(e)  # Display the specific ValueError message to the user
+        await ctx.send(e)
     except Exception as e:
         await ctx.send(f"An unexpected error occurred while generating the Skew-T for {station_code}: {e}")
+    #except Exception as e:
+        #await ctx.send(f"Error calculating indices: {e}")
+       # return  # Stop execution if there's an error in calculations
 	    
 # --- Satellite Command ---
 @bot.command()
@@ -1476,77 +1457,21 @@ async def lightning(ctx, icao: str, radius: int = 5):
 #         **Usage: $lighting <icao> <distance(sm)>**
 #         """)
 
-# --- Meteogram Command --- 
-async def get_metar_data(icao, hoursback=None):
-    """
-    Asynchronously fetches METAR data from the NOAA Aviation Weather Center.
-    """
-    if hoursback:
-        metar_url = f'https://aviationweather.gov/data/metar/?id={icao}&hours={hoursback}'
-        
-    else:
-        metar_url = f'https://aviationweather.gov/data/metar/?id={icao}&hours=0'
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(metar_url) as response:
-            if response.status != 200:
-                raise ValueError(f"Failed to fetch METAR data for {icao}. Status code: {response.status}")
-            src = await response.text()
-
-    soup = BeautifulSoup(src, "html.parser")
-    metar_data = soup.find(id='awc_main_content_wrap')
-    
-    obs = ''
-    for i in metar_data:
-        if str(i).startswith('<code>'):
-            line = str(i).lstrip('<code>').rstrip('</code>')
-            obs += line
-            obs += '\n'
-    return obs, 1 
-
-async def generate_meteogram_image(icao, hoursback):
-    """
-    Generates a meteogram image for the given ICAO code and time range.
-    """
-
-    try:
-        # 1. Fetch METAR data
-        metar_data = await get_metar_data(icao, hoursback) 
-
-        # 2. Process and analyze METAR data
-        txt = metar_data.split('\n')[:-1]
-        if not txt:  # Check if any METAR data was found
-            raise ValueError(f"No METAR data found for {icao}.")
-
-        df = parse_metar_to_dataframe(txt[-1])
-        for row in txt[::-1]:
-            df = df.append(parse_metar_to_dataframe(row))
-
-        # ... (Rest of your data processing and calculations)
-
-        # 3. Generate the meteogram plot 
-        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(18, 18), dpi=150, sharex=True)
-        # ... (Your plotting code)
-
-        # 4. Save the plot as an image
-        temp_image_path = f"meteogram_{icao}.png"
-        plt.savefig(temp_image_path, bbox_inches='tight')
-        plt.close(fig) 
-
-        return temp_image_path
-
-    except Exception as e:
-        print(f"Error generating meteogram image for {icao}: {e}")
-        return None
-
+# --- Meteogram Command ---
 @bot.command()
 async def meteogram(ctx, icao: str, hoursback: str = None):
     """
     Generates a meteogram for the given ICAO code.
     """
 
+    # Create the figure outside the try block
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(18, 18), dpi=150, sharex=True)
+    fig.patch.set_facecolor('white')
+
     try:
-        fname = await generate_meteogram_image(icao, hoursback)
+        # Call the meteogram function in an asyncio task to avoid blocking
+        loop = asyncio.get_event_loop()
+        fname = await loop.run_in_executor(None, meteogram, icao, hoursback)
 
         if fname is None or not os.path.exists(fname):
             await ctx.send(f"Failed to generate meteogram for {icao}.")
@@ -1559,10 +1484,198 @@ async def meteogram(ctx, icao: str, hoursback: str = None):
     except Exception as e:
         await ctx.send(f'Error generating meteogram for {icao}: {e}')
 
+def get_metar_meteogram(icao, hoursback=None):
+
+    if hoursback:
+        metar_url = f'https://www.aviationweather.gov/metar/data?ids={icao}&format=raw&date=&hours={hoursback}&taf=off'
+    else:
+        metar_url = f'https://www.aviationweather.gov/metar/data?ids={icao}&format=raw&date=&hours=0&taf=off'
+    src = requests.get(metar_url).content
+    soup = BeautifulSoup(src, "html.parser")
+    metar_data = soup.find(id='awc_main_content_wrap')
+
+    obs = ''
+    for i in metar_data:
+        if str(i).startswith('<code>'):
+            line = str(i).lstrip('<code>').rstrip('</code>')
+            obs+=line
+            obs+='\n'
+    return obs
+
+def meteogram(icao, hoursback):
+    icaos = [icao.upper()]
+
+    for i, icao in enumerate(icaos):
+        txt = get_metar_meteogram(icao, hoursback).split('\n')[:-1]
+        if not txt:  # Check if txt is empty
+            raise ValueError(f"No METAR data found for {icao}.")
+
+        if i == 0:
+            df = parse_metar_to_dataframe(txt[-1])
+        for row in txt[::-1]:
+            df = df.append(parse_metar_to_dataframe(row))
+
+    df['tempF'] =  (df['air_temperature'] * 9/5) + 32
+    df['dewF'] =  (df['dew_point_temperature'] * 9/5) + 32
+    df['heat_index'] = to_heat_index(df['tempF'].values, df['dewF'].values)
+
+    ## nan HI values where air temp < 80 F
+    df.loc[df['tempF'] < 80, ['heat_index']] = np.nan
+
+    try:
+        df['wet_bulb'] = mpcalc.wet_bulb_temperature(
+            df['air_pressure_at_sea_level'].values * units('hPa'),
+            df['air_temperature'].values * units('degC'),
+            df['dew_point_temperature'].values * units('degC')
+        ).to('degF').m
+    except ValueError as e:
+        print("Can't calculate wet bulb")
+        df['wet_bulb'] = np.nan
+
+    WNDDIR = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW', 'N']
+    WNDDEG = np.arange(0, 361,
+ 22.5)
+
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(18, 18), dpi=150, sharex=True)
+    fig.patch.set_facecolor('white')
+
+    # Plot on ax1 (Temperature)
+    ax1.plot(df['date_time'], df['tempF'], label='<span class="math-inline">T</span>', linestyle='-', marker='', color='tab:red')
+    ax1.plot(df['date_time'], df['wet_bulb'], label='<span class="math-inline">T\_w</span>', linestyle='-', marker='', color='tab:blue')
+    ax1.plot(df['date_time'], df['dewF'], label='<span class="math-inline">T\_d</span>', linestyle='-', marker='', color='tab:green')
+    ax1.plot(df['date_time'], df['heat_index'], label='<span class="math-inline">RF</span>', linestyle='-', marker='', color='tab:orange')
+    # Removed wind chill plot
+
+    ax1.set_ylabel('Temperature (°F)')
+    ax1.set_xlabel('Z-Time (MM-DD HH)')
+    ax1.set_title(f"{df['station_id'][0]}\n{df['date_time'][0].strftime('%Y-%m')}")
+    ax1.set_xticks(pd.date_range(df['date_time'][0].strftime('%Y-%m-%d %H'), df['date_time'][-1].strftime('%Y-%m-%d %H'), freq='2H'))
+    ax1.set_xticklabels(pd.date_range(df['date_time'][0].strftime('%Y-%m-%d %H'), df['date_time'][-1].strftime('%Y-%m-%d %H'), freq='2H').strftime('%m-%d %H%MZ'))
+    ax1.grid(which='both')
+
+    ax1.grid(which='major', axis='x', color='black')
+    ax1.legend(loc='upper left')
+
+    ax2b = ax2.twinx()
+    ax2.plot(df['date_time'], df['wind_speed']*1.15078, label='Speed', linestyle='-', marker='', color='tab:blue')
+    lines_1, labels_1 = ax2.get_legend_handles_labels()
+    ax2b.plot(df['date_time'], df['wind_direction'], label='Direction', linestyle='', marker='*', color='tab:cyan')
+    lines_2, labels_2 = ax2b.get_legend_handles_labels()
+    max_wind = df['wind_speed'].max()*1.15078
+    if max_wind > 30:
+        ax2.set_ylim([0, max_wind+5])
+    else:
+        ax2.set_ylim([0, 30])
+    ax2.set_ylabel('Wind Speed (mph)')
+    ax2b.set_ylabel('Wind Direction (°)')
+    ax2b.set_ylim([-10,370])
+    ax2b.set_yticks(WNDDEG[::4])
+    ax2b.set_yticklabels(WNDDIR[::4])
+    ax2.grid(which='both')
+    ax2.grid(which='major', axis='x', color='black')
+    lines = lines_1 + lines_2
+    labels = labels_1 + labels_2
+    ax2.legend(lines, labels, loc='upper left')
+
+
+    ax3.plot(df['date_time'], df['altimeter'], label='Altimeter', linestyle='-', marker='', color='tab:brown')
+    ax3.set_ylabel('Pressure (inHg)')
+    # ax3.set_ylim([29.70, 30.10])
+    ax3.grid(which='both')
+    ax3.grid(which='major', axis='x', color='black')
+
+
+    ax4.plot(df['date_time'], df['low_cloud_level']/1000, label='Low', linestyle='', marker='*')
+    ax4.plot(df['date_time'], df['medium_cloud_level']/1000, label='Medium', linestyle='', marker='*')
+    ax4.plot(df['date_time'], df['high_cloud_level']/1000, label='High', linestyle='', marker='*')
+    ax4.plot(df['date_time'], df['highest_cloud_level']/1000, label='Highest', linestyle='', marker='*')
+    ax4.set_ylim([0, 30])
+    ax4.set_ylabel('Cloud Height (kft)')
+    ax4.set_xlabel('Date (MM-DD-HH Z)')
+    ax4.set_xticks(pd.date_range(df['date_time'][0].strftime('%Y-%m-%d %H'), (df['date_time'][-1]+timedelta(hours=6)).strftime('%Y-%m-%d %H'), freq='6H'))
+    ax4.set_xticklabels(pd.date_range(df['date_time'][0].strftime('%Y-%m-%d %H'), (df['date_time'][-1]+timedelta(hours=6)).strftime('%Y-%m-%d %H'), freq='6H').strftime('%d %HZ'))
+    ax4.legend(loc='upper left')
+    ax4.xaxis.set_major_locator(DayLocator())
+    ax4.xaxis.set_minor_locator(HourLocator(range(0, 25, 3)))
+    ax4.grid(which='both')
+    ax4.grid(which='major', axis='x', color='black')
+#   ax4.grid(which='minor', axis='x', linewidth=0.5)
+    ax4.xaxis.set_major_formatter(DateFormatter('%Y-%m-%d'))
+    ax4.xaxis.set_minor_formatter(DateFormatter('%H'))
+    fig.autofmt_xdate(rotation=50)
+    fname = f"../imgs/meteogram/metorgram_{df['station_id'][0]}.png"
+    plt.savefig(fname, bbox_inches='tight')
+    plt.close(fig)
+
+    return fname
+
+# --- Meteogram Generation ---
+def meteogram(icao, hoursback):
+    # Calculate wind chill and heat index (assuming you have the `to_wind_chill` and `to_heat_index` functions defined)
+    #df['wind_chill'] = to_wind_chill(df['tempF'].values, df['wind_speed'].values)
+    #df['heat_index'] = to_heat_index(df['tempF'].values, df['dewF'].values)
+
+    # Handle missing values (replace NaNs with a specific value or drop rows)
+    #df.fillna(value={'wind_chill': -999, 'heat_index': -999}, inplace=True)  # Replace NaNs with -999
+    # or
+    #df.dropna(subset=['wind_chill', 'heat_index'], inplace=True)  # Drop rows with NaN values
+
+    try:
+        # 3. Generate the meteogram plot
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(18, 18), dpi=150, sharex=True)
+        fig.patch.set_facecolor('white')
+
+        # Calculate wind chill and heat index
+        #df['wind_chill'] = to_wind_chill(df['tempF'].values, df['wind_speed'].values)
+        #df['heat_index'] = to_heat_index(df['tempF'].values, df['dewF'].values)
+
+        # Plot temperature, dew point, etc. on ax1
+        ax1.plot(df['date_time'], df['tempF'], label='T', color='red')
+        ax1.plot(df['date_time'], df['dewF'], label='Td', color='green')
+        # ... other plots on ax1 ...
+
+        ax1.set_ylabel('Temperature (°F)')
+        ax1.legend()
+
+        # Plot wind speed and direction on ax2
+        ax2.plot(df['date_time'], df['wind_speed'], label='Wind Speed', color='blue')
+        # ... (potentially add wind barbs or other wind visualizations)
+
+        ax2.set_ylabel('Wind Speed')
+        ax2.legend()
+
+        # Plot pressure on ax3
+        ax3.plot(df['date_time'], df['altimeter'], label='Altimeter', color='brown')
+
+        ax3.set_ylabel('Pressure (inHg)')
+        ax3.legend()
+
+        # Plot cloud cover or other variables on ax4
+        ax4.plot(df['date_time'], df['cloud_cover'], label='Cloud Cover (%)', color='gray')
+        ax4.plot(df['date_time'], df['cloud_cover'], label='Cloud Cover (%)', color='gray')
+
+        ax4.set_ylabel('Cloud Cover (%)')  # Or adjust the label based on your plot
+        ax4.legend()
+
+        # Format x-axis (shared by all subplots)
+        ax4.set_xlabel('Time')
+
+        # 4. Save the plot as an image
+        # Adjust the file path as needed
+        temp_image_path = f"meteogram_{icao}.png"  # Or use an absolute path
+        plt.savefig(temp_image_path, bbox_inches='tight')
+        plt.close(fig)
+
+        return temp_image_path
+
+    except Exception as e:
+        print(f"Error generating meteogram image for {icao}: {e}")
+        return None  # Return None to indicate an error
+
 # --- Time Command ---
 @bot.command(name='utc')
 async def worldtimes(ctx):
-  
+
   embed = discord.Embed(title="**Time Zones**", color=0x007F00)
 
   utc_now = pytz.utc.localize(datetime.datetime.utcnow())
@@ -1575,7 +1688,6 @@ async def worldtimes(ctx):
       "Mountain": "America/Denver",
       "Central": "America/Chicago",
       "Eastern": "America/New_York"
-
   }
 
   international_timezones = {
@@ -1589,13 +1701,13 @@ async def worldtimes(ctx):
       "Beijing": "Asia/Shanghai"
   }
 
-#add the times to the embed
+  #add the times to the embed
   for region, timezone_str in us_timezones.items():
       timezone = pytz.timezone(timezone_str)
       local_time = utc_now.astimezone(timezone)
       embed.add_field(name=f"{region} (US)", value=local_time.strftime('%H:%M:%S'), inline=True)
 
-  for city, timezone_str in other_timezones.items():
+  for city, timezone_str in international_timezones.items():  # Use 'international_timezones' here
       timezone = pytz.timezone(timezone_str)
       local_time = utc_now.astimezone(timezone)
       embed.add_field(name=city, value=local_time.strftime('%H:%M:%S'), inline=True)
