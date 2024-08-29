@@ -500,11 +500,11 @@ async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
         skew.ax.set_xlim(-40, 60)
 
         # Add the parcel profile
-        skew.plot(parcel_profile, 'k', linewidth=2)  # Add the parcel path
+        #skew.plot(parcel_profile, 'k', linewidth=2)  # Add the parcel path
 
         # Shade areas of CAPE and CIN
-        skew.shade_cape(p, T, parcel_profile)
-        skew.shade_cin(p, T, parcel_profile)
+        #skew.shade_cape(p, T, parcel_profile)
+        #skew.shade_cin(p, T, parcel_profile)
 
         # Add labels and title
         plt.title(f'{station_code} {now.strftime("%Y-%m-%d %HZ")}', weight='bold', size=14, color='#556B2F')
