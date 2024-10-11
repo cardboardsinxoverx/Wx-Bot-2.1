@@ -97,8 +97,6 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=config.COMMAND_PREFIX, intents=intents)
 
-OPENWEATHERMAP_API_KEY = 'efd4f5ec6d2b16958a946b2ceb0419a6'
-
 
 # --- on_message Event Handler ---
 ''''@bot.event
