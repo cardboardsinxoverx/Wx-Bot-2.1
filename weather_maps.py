@@ -93,28 +93,36 @@ def generate_surface_temp_map():
         print("Geopotential Height Min:", geopotential_height.min().values)
         print("Geopotential Height Max:", geopotential_height.max().values)
 
-        # Convert geopotential height to mean sea level pressure
-        P0 = 1013.25 * units.hPa  # Reference pressure at sea level
-        g = 9.80665 * units.meter / units.second**2  # Acceleration due to gravity
-        R = 287.05 * units.joule / (units.kilogram * units.kelvin)  # Specific gas constant for dry air
-        T0 = temp_surface.metpy.convert_units('kelvin')  # Convert temperature to Kelvin for calculation
+        # Use geopotential height to calculate pseudo pressure with more realistic distribution
+        H = 7000  # Scale height in meters, used to adjust the distribution
+        P0 = 1013  # Reference pressure at sea level in hPa
 
-        # Calculate pressure using the barometric formula with the ideal gas law
-        pseudo_pressure = P0 * np.exp(-geopotential_height / (R * T0 / g))
+        # Calculate the temperature lapse rate dynamically based on the mean temperature
+        mean_temp = temp_surface.mean().values  # Mean temperature in the region (in Kelvin)
+        lapse_rate = 6.5 / 1000  # Standard lapse rate in K/m (can be refined)
 
-        # Convert pseudo_pressure to hPa for plotting
-        pseudo_pressure = pseudo_pressure.to('hPa').m
+        # Barometric formula to adjust pressure calculation with a dynamic lapse rate
+        pseudo_pressure = P0 * np.exp(-geopotential_height / (H * (1 - lapse_rate * (geopotential_height / mean_temp))))
 
         # Debugging: Check pseudo pressure values
-        print("Pseudo Pressure (Initial) Min:", pseudo_pressure.min())
-        print("Pseudo Pressure (Initial) Max:", pseudo_pressure.max())
+        print("Pseudo Pressure (Initial) Min:", pseudo_pressure.min().values)
+        print("Pseudo Pressure (Initial) Max:", pseudo_pressure.max().values)
+
+        # Apply further scaling and normalization to better match surface pressures
+        mean_pressure = 1013  # Mean sea-level pressure in hPa
+        scaling_factor = 1.05  # Additional scaling factor to better stretch the pressure values
+        pseudo_pressure_adjusted = (pseudo_pressure - pseudo_pressure.mean()) * scaling_factor + mean_pressure
+
+        # Bias correction to align more closely with known observations
+        bias_correction = -2  # Bias factor to bring values closer to observed data (can be adjusted)
+        pseudo_pressure_adjusted += bias_correction
 
         # Clip values to avoid unrealistic pressure extremes
-        pseudo_pressure_adjusted = np.clip(pseudo_pressure, 980, 1050)
+        pseudo_pressure_adjusted = np.clip(pseudo_pressure_adjusted, 980, 1050)
 
         # Debugging: Check pseudo pressure values
-        print("Pseudo Pressure (Adjusted) Min:", pseudo_pressure_adjusted.min())
-        print("Pseudo Pressure (Adjusted) Max:", pseudo_pressure_adjusted.max())
+        print("Pseudo Pressure (Adjusted) Min:", pseudo_pressure_adjusted.min().values)
+        print("Pseudo Pressure (Adjusted) Max:", pseudo_pressure_adjusted.max().values)
 
         # Extract wind components (U and V) from isobaric level closest to the surface
         u_wind = ds.get('u-component_of_wind_isobaric')
@@ -143,7 +151,7 @@ def generate_surface_temp_map():
         # Define isobar levels between a realistic surface pressure range
         start_level = 980  # Start at 980 hPa
         end_level = 1050   # End at 1050 hPa
-        levels = np.arange(start_level, end_level + 4, 4)
+        levels = np.arange(start_level, end_level + 5, 4)
 
         # Plot Isobars (Pressure Contours) using the adjusted pseudo pressure data
         isobars = ax.contour(
@@ -170,10 +178,7 @@ def generate_surface_temp_map():
     except Exception as e:
         print(f"An error occurred in generate_surface_temp_map: {e}")
         return None
-
-
-
-
+        
 def plot_background(ax):
     # Add geographical features
     ax.add_feature(cfeature.COASTLINE.with_scale('50m'), linewidth=1)
