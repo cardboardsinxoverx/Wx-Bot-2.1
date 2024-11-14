@@ -108,17 +108,19 @@ def generate_surface_temp_map():
         print("Pseudo Pressure (Initial) Min:", pseudo_pressure.min().values)
         print("Pseudo Pressure (Initial) Max:", pseudo_pressure.max().values)
 
+        # ----> FIX INTEGRATED HERE <----
         # Apply further scaling and normalization to better match surface pressures
         mean_pressure = 1013  # Mean sea-level pressure in hPa
-        scaling_factor = 1.05  # Additional scaling factor to better stretch the pressure values
+        scaling_factor = -1.05  # Adjust this value if needed
         pseudo_pressure_adjusted = (pseudo_pressure - pseudo_pressure.mean()) * scaling_factor + mean_pressure
 
-        # Bias correction to align more closely with known observations
-        bias_correction = -2  # Bias factor to bring values closer to observed data (can be adjusted)
+        # Adjust bias correction to align with the new scaling
+        bias_correction = 2  # Adjust this value if needed
         pseudo_pressure_adjusted += bias_correction
 
         # Clip values to avoid unrealistic pressure extremes
         pseudo_pressure_adjusted = np.clip(pseudo_pressure_adjusted, 980, 1050)
+        # ----> END OF FIX <----
 
         # Debugging: Check pseudo pressure values
         print("Pseudo Pressure (Adjusted) Min:", pseudo_pressure_adjusted.min().values)
@@ -144,7 +146,7 @@ def generate_surface_temp_map():
                           transform=ccrs.PlateCarree(), levels=np.linspace(temp_surface.min(), temp_surface.max(), 20))
         c1 = ax.contour(lon_2d, lat_2d, temp_surface, colors='#244731', linewidths=2, transform=ccrs.PlateCarree())
         ax.clabel(c1, fontsize=15, inline=1, fmt='%.2f°F')
-        ax.set_title('Surface Temperatures', fontsize=16)
+        ax.set_title('Surface Temperatures (hPa)', fontsize=16)
         cb1 = fig.colorbar(cf1, ax=ax, orientation='horizontal', shrink=1.0, pad=0.05, extend='both')
         cb1.set_label('Temperature (°F)', size='large')
 
