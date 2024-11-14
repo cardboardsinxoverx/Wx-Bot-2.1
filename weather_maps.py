@@ -13,6 +13,8 @@ from scipy import ndimage
 import asyncio
 import io
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
+import os
 
 # Intents are required for Discord.py 1.5+
 intents = discord.Intents.default()
@@ -48,15 +50,148 @@ def get_gfs_data_for_level(level):
     ds = ds.metpy.parse_cf()
     return ds, run_date
 
-# Helper function to add map features
+def generate_surface_temp_map():
+    try:
+        # Create the figure and axes early to ensure 'ax' is always defined
+        fig, ax = plt.subplots(figsize=(20, 12), subplot_kw={'projection': ccrs.PlateCarree()})
+
+        # Set figure background color
+        fig.patch.set_facecolor('lightsteelblue')
+
+        # Get dataset
+        ds, run_date = get_gfs_data_for_level(100000)
+
+        # Print dataset variables to debug
+        print("Dataset variables:", ds.data_vars)
+
+        # Access longitude and latitude directly from the dataset
+        lon = ds.get('longitude')
+        lat = ds.get('latitude')
+
+        if lon is None or lat is None:
+            raise ValueError("Longitude or latitude data is missing from the dataset.")
+
+        lon = lon.values
+        lat = lat.values
+
+        # Create 2D grids of latitude and longitude
+        lon_2d, lat_2d = np.meshgrid(lon, lat)
+
+        # Extract surface temperature
+        temp_surface = ds.get('Temperature_surface')
+        if temp_surface is None:
+            raise ValueError("Surface temperature data is missing from the dataset.")
+        temp_surface = temp_surface.squeeze().copy()
+
+        # Extract geopotential height at the 1000 hPa isobaric level
+        if 'Geopotential_height_isobaric' in ds:
+            geopotential_height = ds['Geopotential_height_isobaric'].sel(isobaric=1000, method='nearest').squeeze()
+        else:
+            raise ValueError("No valid geopotential height data found in the dataset.")
+
+        # Debugging: Check geopotential height values
+        print("Geopotential Height Min:", geopotential_height.min().values)
+        print("Geopotential Height Max:", geopotential_height.max().values)
+
+        # Convert geopotential height to mean sea level pressure
+        P0 = 1013.25 * units.hPa  # Reference pressure at sea level
+        g = 9.80665 * units.meter / units.second**2  # Acceleration due to gravity
+        R = 287.05 * units.joule / (units.kilogram * units.kelvin)  # Specific gas constant for dry air
+        T0 = temp_surface.metpy.convert_units('kelvin')  # Convert temperature to Kelvin for calculation
+
+        # Calculate pressure using the barometric formula with the ideal gas law
+        pseudo_pressure = P0 * np.exp(-geopotential_height / (R * T0 / g))
+
+        # Convert pseudo_pressure to hPa for plotting
+        pseudo_pressure = pseudo_pressure.to('hPa').m
+
+        # Debugging: Check pseudo pressure values
+        print("Pseudo Pressure (Initial) Min:", pseudo_pressure.min())
+        print("Pseudo Pressure (Initial) Max:", pseudo_pressure.max())
+
+        # Clip values to avoid unrealistic pressure extremes
+        pseudo_pressure_adjusted = np.clip(pseudo_pressure, 980, 1050)
+
+        # Debugging: Check pseudo pressure values
+        print("Pseudo Pressure (Adjusted) Min:", pseudo_pressure_adjusted.min())
+        print("Pseudo Pressure (Adjusted) Max:", pseudo_pressure_adjusted.max())
+
+        # Extract wind components (U and V) from isobaric level closest to the surface
+        u_wind = ds.get('u-component_of_wind_isobaric')
+        v_wind = ds.get('v-component_of_wind_isobaric')
+        if u_wind is None or v_wind is None:
+            raise ValueError("Wind data is missing from the dataset.")
+
+        u_wind = u_wind.sel(isobaric=1000, method='nearest').squeeze()
+        v_wind = v_wind.sel(isobaric=1000, method='nearest').squeeze()
+
+        # Convert units to degrees Fahrenheit
+        temp_surface = temp_surface.metpy.convert_units('degF')
+
+        # Add background to the plot
+        plot_background(ax)
+
+        # Plot Surface Temperatures
+        cf1 = ax.contourf(lon_2d, lat_2d, temp_surface, cmap='jet',
+                          transform=ccrs.PlateCarree(), levels=np.linspace(temp_surface.min(), temp_surface.max(), 20))
+        c1 = ax.contour(lon_2d, lat_2d, temp_surface, colors='#244731', linewidths=2, transform=ccrs.PlateCarree())
+        ax.clabel(c1, fontsize=15, inline=1, fmt='%.2f°F')
+        ax.set_title('Surface Temperatures', fontsize=16)
+        cb1 = fig.colorbar(cf1, ax=ax, orientation='horizontal', shrink=1.0, pad=0.05, extend='both')
+        cb1.set_label('Temperature (°F)', size='large')
+
+        # Define isobar levels between a realistic surface pressure range
+        start_level = 980  # Start at 980 hPa
+        end_level = 1050   # End at 1050 hPa
+        levels = np.arange(start_level, end_level + 4, 4)
+
+        # Plot Isobars (Pressure Contours) using the adjusted pseudo pressure data
+        isobars = ax.contour(
+            lon_2d, lat_2d, pseudo_pressure_adjusted, levels=levels,
+            colors='black', linestyles='-', linewidths=2, transform=ccrs.PlateCarree()
+        )
+        ax.clabel(isobars, fontsize=12, inline=1, fmt='%.1f hPa')
+
+        # Plot Wind Barbs with reduced density
+        skip = (slice(None, None, 5), slice(None, None, 5))  # Reduce density by plotting every 5th point
+        ax.barbs(lon_2d[skip], lat_2d[skip], u_wind[skip], v_wind[skip], length=6, transform=ccrs.PlateCarree(), pivot='middle', barbcolor='#3f0345')
+
+        # Adjust layout and add figure title
+        plt.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.05)
+        fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=24, y=1.02)
+
+        # Save the figure to a BytesIO object
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+
+        return buf
+    except Exception as e:
+        print(f"An error occurred in generate_surface_temp_map: {e}")
+        return None
+
+
+
+
 def plot_background(ax):
-    ax.set_extent([-125, -65, 25, 50], crs=ccrs.PlateCarree())
-    ax.coastlines()
-    ax.add_feature(cfeature.BORDERS.with_scale('50m'), linestyle=':', linewidths=2, edgecolor='#750b7a')
-    ax.add_feature(cfeature.STATES.with_scale('50m'), linestyle=':', linewidths=2, edgecolor='#750b7a')
-    gl = ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
+    # Add geographical features
+    ax.add_feature(cfeature.COASTLINE.with_scale('50m'), linewidth=1)
+    ax.add_feature(cfeature.BORDERS.with_scale('50m'), linewidth=1)
+    ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=0.5)
+    ax.add_feature(cfeature.LAND, facecolor='lightgray')
+    ax.add_feature(cfeature.OCEAN, facecolor='lightblue')
+
+    # Add gridlines
+    gl = ax.gridlines(
+        draw_labels=True, linewidth=0.5, color='gray', alpha=0.5, linestyle='--'
+    )
     gl.top_labels = False
     gl.right_labels = False
+    gl.xformatter = LongitudeFormatter()
+    gl.yformatter = LatitudeFormatter()
+    gl.xlabel_style = {'size': 12}
+    gl.ylabel_style = {'size': 12}
 
 # Generalized map generation function
 def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=None):
@@ -108,15 +243,15 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
 
     # Calculate logo positions in axes coordinates
     logo_size = 1.00  # 3/4 inch
-    logo_pad = 0.2  # 0.2 inches
+    logo_pad = 0.25  # 0.25 inches
     fig_width, fig_height = fig.get_size_inches()
     logo_size_axes = logo_size / fig_width
     logo_pad_axes = logo_pad / fig_width
 
     for i, logo_path in enumerate(logo_paths):
         logo_img = plt.imread(logo_path)
-        imagebox = OffsetImage(logo_img, zoom=logo_size_axes)
-        ab = AnnotationBbox(imagebox, (1 - logo_pad_axes if i == 0 else logo_pad_axes, 1 - logo_pad_axes),
+        imagebox = OffsetImage(logo_img, zoom=logo_size / fig_width)
+        ab = AnnotationBbox(imagebox, (1 - logo_pad_axes if i == 0 else logo_pad_axes, 1 - logo_pad / fig_height),
                             xycoords='figure fraction',  # Changed to figure fraction!
                             box_alignment=(1 if i == 0 else 0, 1),
                             frameon=False)
@@ -135,7 +270,7 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
     cb.set_label(cb_label, size='large')
 
     # Adjust layout and add figure title
-    fig.tight_layout()
+    plt.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.05)
     fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=24, y=1.02)
 
     # Save the figure to a BytesIO object
@@ -196,96 +331,9 @@ async def surfaceTemp(ctx):
     loop = asyncio.get_event_loop()
     try:
         image_bytes = await loop.run_in_executor(None, generate_surface_temp_map)
-        await ctx.send(file=discord.File(fp=image_bytes, filename='surfaceTemp.png'))
+        if image_bytes:
+            await ctx.send(file=discord.File(fp=image_bytes, filename='surfaceTemp.png'))
+        else:
+            await ctx.send('Failed to generate surface temperature map.')
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
-
-def generate_surface_temp_map():
-    ds, run_date = get_gfs_data_for_level(100000)
-
-    # Access longitude and latitude directly from the dataset
-    lon = ds['longitude'].values
-    lat = ds['latitude'].values
-
-    # Create 2D grids of latitude and longitude
-    lon_2d, lat_2d = np.meshgrid(lon, lat)
-
-    # Extract surface temperature
-    temp_surface = ds['Temperature_surface'].squeeze().copy()
-
-    # Extract mean sea level pressure if available, or calculate it
-    if 'Pressure_msl' in ds:
-        pressure_msl = ds['Pressure_msl'].squeeze()
-    else:
-        # Fallback to geopotential height to estimate pressure (not ideal, but a placeholder)
-        pressure_msl = ds['Geopotential_height_isobaric'].sel(isobaric=1000, method='nearest').squeeze() / 10  # Placeholder scaling
-
-    # Extract wind components (U and V) from isobaric level closest to the surface
-    u_wind = ds['u-component_of_wind_isobaric'].sel(isobaric=1000, method='nearest').squeeze()
-    v_wind = ds['v-component_of_wind_isobaric'].sel(isobaric=1000, method='nearest').squeeze()
-
-    # Convert units to degrees Fahrenheit
-    temp_surface = temp_surface.metpy.convert_units('degF')
-
-    # Define the map projection
-    crs = ccrs.PlateCarree()
-
-    # Create the figure and axes
-    fig, ax = plt.subplots(figsize=(20, 12), subplot_kw={'projection': crs})
-
-    # Set figure background color
-    fig.patch.set_facecolor('lightsteelblue')
-
-    # Add background to the plot
-    plot_background(ax)
-
-    # Plot Surface Temperatures
-    cf1 = ax.contourf(lon_2d, lat_2d, temp_surface, cmap='jet',
-                             transform=crs, levels=np.linspace(temp_surface.min(), temp_surface.max(), 20))
-    c1 = ax.contour(lon_2d, lat_2d, temp_surface, colors='#244731', linewidths=2, transform=crs)
-    ax.clabel(c1, fontsize=15, inline=1, fmt='%.2f°F')
-    ax.set_title('Surface Temperatures', fontsize=16)
-    cb1 = fig.colorbar(cf1, ax=ax, orientation='horizontal', shrink=1.0, pad=0.05, extend='both')
-    cb1.set_label('Temperature (°F)', size='large')
-
-    # Plot Isobars (Pressure Contours) using actual pressure or estimated pressure
-    isobars = ax.contour(lon_2d, lat_2d, pressure_msl, colors='black', linestyles='-.', linewidths=2.5, transform=crs)
-    ax.clabel(isobars, fontsize=16, inline=1, fmt='%.2f hPa')
-
-    # Plot Wind Barbs with reduced density
-    skip = (slice(None, None, 5), slice(None, None, 5))  # Reduce density by plotting every 5th point
-    ax.barbs(lon_2d[skip], lat_2d[skip], u_wind[skip], v_wind[skip], length=6, transform=crs, pivot='middle', barbcolor='#3f0345')
-
-    # Adjust layout and add figure title
-    fig.tight_layout()
-    fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=24, y=1.02)
-
-    # Add logos
-    logo_paths = [
-        "/home/evanl/Documents/boxlogo2.png",  # Right logo
-        "/home/evanl/Documents/uga_logo.png"   # Left logo
-    ]
-
-    # Calculate logo positions in axes coordinates
-    logo_size = 1.00  # 1 inch
-    logo_pad = 0.2  # 0.2 inches
-    fig_width, fig_height = fig.get_size_inches()
-    logo_size_axes = logo_size / fig_width
-    logo_pad_axes = logo_pad / fig_width
-
-    for i, logo_path in enumerate(logo_paths):
-        logo_img = plt.imread(logo_path)
-        imagebox = OffsetImage(logo_img, zoom=logo_size_axes)
-        ab = AnnotationBbox(imagebox, (1 - logo_pad_axes if i == 0 else logo_pad_axes, 1 - logo_pad_axes),
-                            xycoords='figure fraction',  # Changed to figure fraction!
-                            box_alignment=(1 if i == 0 else 0, 1),
-                            frameon=False)
-        ax.add_artist(ab)
-
-    # Save the figure to a BytesIO object
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight')
-    plt.close(fig)
-    buf.seek(0)
-
-    return buf
