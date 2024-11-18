@@ -141,24 +141,46 @@ def generate_surface_temp_map():
         # Add background to the plot
         plot_background(ax)
 
+        # Add logos
+        logo_paths = [
+            "/home/evanl/Documents/boxlogo2.png",  # Right logo
+            "/home/evanl/Documents/uga_logo.png"   # Left logo
+        ]
+
+        # Calculate logo positions in axes coordinates
+        logo_size = 1.00  # 3/4 inch
+        logo_pad = 0.25  # 0.25 inches
+        fig_width, fig_height = fig.get_size_inches()
+        logo_size_axes = logo_size / fig_width
+        logo_pad_axes = logo_pad / fig_width
+
+        for i, logo_path in enumerate(logo_paths):
+            logo_img = plt.imread(logo_path)
+            imagebox = OffsetImage(logo_img, zoom=logo_size / fig_width)
+            ab = AnnotationBbox(imagebox, (1 - logo_pad_axes if i == 0 else logo_pad_axes, 1 - logo_pad / fig_height),
+                                xycoords='figure fraction',  # Changed to figure fraction!
+                                box_alignment=(1 if i == 0 else 0, 1),
+                                frameon=False)
+            ax.add_artist(ab)
+
         # Plot Surface Temperatures
-        cf1 = ax.contourf(lon_2d, lat_2d, temp_surface, cmap='jet',
-                          transform=ccrs.PlateCarree(), levels=np.linspace(temp_surface.min(), temp_surface.max(), 20))
-        c1 = ax.contour(lon_2d, lat_2d, temp_surface, colors='#244731', linewidths=2, transform=ccrs.PlateCarree())
-        ax.clabel(c1, fontsize=15, inline=1, fmt='%.2f°F')
-        ax.set_title('Surface Temperatures (hPa)', fontsize=16)
+        cf1 = ax.contourf(lon_2d, lat_2d, temp_surface, cmap='gist_rainbow_r',
+                        transform=ccrs.PlateCarree(), levels=np.linspace(temp_surface.min(), temp_surface.max(), 10))  # Changed to 10 levels
+        c1 = ax.contour(lon_2d, lat_2d, temp_surface, colors='#2e2300', linewidths=2, linestyles='dashed', transform=ccrs.PlateCarree())
+        ax.clabel(c1, fontsize=12, inline=1, fmt='%.2f°F')
+        ax.set_title('Surface Temperatures (°F)', fontsize=16)  # Corrected title
         cb1 = fig.colorbar(cf1, ax=ax, orientation='horizontal', shrink=1.0, pad=0.05, extend='both')
         cb1.set_label('Temperature (°F)', size='large')
 
         # Define isobar levels between a realistic surface pressure range
         start_level = 980  # Start at 980 hPa
         end_level = 1050   # End at 1050 hPa
-        levels = np.arange(start_level, end_level + 5, 4)
+        levels = np.arange(start_level, end_level + 2, 2)  # Changed increment to 2
 
         # Plot Isobars (Pressure Contours) using the adjusted pseudo pressure data
         isobars = ax.contour(
             lon_2d, lat_2d, pseudo_pressure_adjusted, levels=levels,
-            colors='black', linestyles='-', linewidths=2, transform=ccrs.PlateCarree()
+            colors='black', linestyles='-', linewidths=2.5, transform=ccrs.PlateCarree()
         )
         ax.clabel(isobars, fontsize=12, inline=1, fmt='%.1f hPa')
 
@@ -180,7 +202,7 @@ def generate_surface_temp_map():
     except Exception as e:
         print(f"An error occurred in generate_surface_temp_map: {e}")
         return None
-        
+
 def plot_background(ax):
     # Add geographical features
     ax.add_feature(cfeature.COASTLINE.with_scale('50m'), linewidth=1)
@@ -269,7 +291,7 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
         cf = ax.contourf(lon_2d, lat_2d, data, cmap=cmap, transform=crs)
     else:
         cf = ax.contourf(lon_2d, lat_2d, data, cmap=cmap, transform=crs, levels=levels)
-    c = ax.contour(lon_2d, lat_2d, heights_smooth, colors='black', linewidths=2, transform=crs)
+    c = ax.contour(lon_2d, lat_2d, heights_smooth, colors='black', linewidths=2.5, transform=crs)
     ax.clabel(c, fontsize=8, inline=1, fmt='%i')
     ax.barbs(lon_2d[::5, ::5], lat_2d[::5, ::5], u_wind[::5, ::5], v_wind[::5, ::5], transform=crs, length=6)
     ax.set_title(title, fontsize=16)
@@ -294,8 +316,8 @@ async def wind300(ctx):
     loop = asyncio.get_event_loop()
     try:
         ds, run_date = get_gfs_data_for_level(30000)
-        image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 30000, 'wind_speed', 'cool', '300-hPa Wind Speeds and Heights', 'Wind Speed (knots)'))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='wind300.png'))
+        image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 30000, 'wind_speed', 'YlGnBu', '300-hPa Wind Speeds and Heights', 'Wind Speed (knots)'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='wind300_{run_date.strftime("%HZ".png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -306,7 +328,7 @@ async def vort500(ctx):
     try:
         ds, run_date = get_gfs_data_for_level(50000)
         image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 50000, 'vorticity', 'seismic', '500-hPa Absolute Vorticity and Heights', r'Vorticity ($10^{-5}$ s$^{-1}$)', levels=np.linspace(-20, 20, 41)))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='vort500.png'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='vort500_{run_date.strftime("%HZ").png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -317,7 +339,7 @@ async def rh700(ctx):
     try:
         ds, run_date = get_gfs_data_for_level(70000)
         image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 70000, 'relative_humidity', 'BuGn', '700-hPa Relative Humidity and Heights', 'Relative Humidity (%)'))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='rh700.png'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='rh700_{run_date.strftime("%HZ").png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -327,8 +349,8 @@ async def wind850(ctx):
     loop = asyncio.get_event_loop()
     try:
         ds, run_date = get_gfs_data_for_level(85000)
-        image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 85000, 'wind_speed', 'YlOrBr', '850-hPa Wind Speeds and Heights', 'Wind Speed (knots)'))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='wind850.png'))
+        image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 85000, 'wind_speed', 'PuRd', '850-hPa Wind Speeds and Heights', 'Wind Speed (knots)'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='wind850_{run_date.strftime("%HZ").png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -339,7 +361,7 @@ async def surfaceTemp(ctx):
     try:
         image_bytes = await loop.run_in_executor(None, generate_surface_temp_map)
         if image_bytes:
-            await ctx.send(file=discord.File(fp=image_bytes, filename='surfaceTemp.png'))
+            await ctx.send(file=discord.File(fp=image_bytes, filename='surfaceTemp_{run_date.strftime("%HZ").png'))
         else:
             await ctx.send('Failed to generate surface temperature map.')
     except Exception as e:
