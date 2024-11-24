@@ -538,8 +538,8 @@ async def skewt(ctx, station_code: str, sounding_time: str = "12Z"):
         add_metpy_logo(fig, 85, 85, size='small')
 
          # METOC Logo
-        logo_img = plt.imread('/home/evanl/Documents/photo.jpg')  # Replace with your logo's actual path
-        imagebox = OffsetImage(logo_img, zoom=0.4)  # Adjust 'zoom' to control logo size
+        logo_img = plt.imread('/home/evanl/Documents/boxlogo2.png')  # Replace with your logo's actual path
+        imagebox = OffsetImage(logo_img, zoom=0.2)  # Adjust 'zoom' to control logo size
         ab = AnnotationBbox(imagebox, (1.10, 1.20), xycoords='axes fraction', frameon=False, box_alignment=(1, 0))
         ax.add_artist(ab)
 

@@ -20,6 +20,16 @@ import os
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix='$', intents=intents)
 
+# Adding Thermoisotherms to 500-hPa Plot
+def add_thermoisotherms_500hpa(ax, lon_2d, lat_2d, temperature):
+    temp_levels = np.arange(-50, 50, 10)
+    thermoisotherms = ax.contour(
+        lon_2d, lat_2d, temperature, levels=temp_levels,
+        colors='b', linestyles='--', linewidths=2,
+        alpha=1.0, transform=ccrs.PlateCarree()
+    )
+    ax.clabel(thermoisotherms, fontsize=8, inline=1, fmt='%d°C')
+
 # Helper function to fetch GFS data for a specific level
 def get_gfs_data_for_level(level):
     now = datetime.utcnow()
@@ -205,11 +215,11 @@ def generate_surface_temp_map():
 
 def plot_background(ax):
     # Add geographical features
-    ax.add_feature(cfeature.COASTLINE.with_scale('50m'), linewidth=1)
-    ax.add_feature(cfeature.BORDERS.with_scale('50m'), linewidth=1)
-    ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=0.5)
-    ax.add_feature(cfeature.LAND, facecolor='lightgray')
-    ax.add_feature(cfeature.OCEAN, facecolor='lightblue')
+    ax.add_feature(cfeature.COASTLINE.with_scale('50m'), linewidth=2)
+    ax.add_feature(cfeature.BORDERS.with_scale('50m'), linewidth=2)
+    ax.add_feature(cfeature.STATES.with_scale('50m'), linewidth=1)
+    ax.add_feature(cfeature.LAND, facecolor='#3f664a')
+    ax.add_feature(cfeature.OCEAN, facecolor='#a5a2fa')
 
     # Add gridlines
     gl = ax.gridlines(
@@ -310,6 +320,73 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
 
     return buf
 
+# Function to generate 850-hPa Temperature Advection Map
+def generate_temp_advection_map(ds, run_date):
+    lon = ds['longitude'].values
+    lat = ds['latitude'].values
+    lon_2d, lat_2d = np.meshgrid(lon, lat)
+    heights = ds['Geopotential_height_isobaric'].sel(isobaric=85000, method='nearest').squeeze().values.copy()
+    u_wind = ds['u-component_of_wind_isobaric'].sel(isobaric=85000, method='nearest').squeeze().copy()
+    v_wind = ds['v-component_of_wind_isobaric'].sel(isobaric=85000, method='nearest').squeeze().copy()
+
+    # Calculate temperature advection
+    temp_850 = ds['Temperature_surface'].squeeze().copy()  # Using Temperature_surface as Temperature_isobaric is not available
+    dx, dy = mpcalc.lat_lon_grid_deltas(lon_2d, lat_2d)
+    temp_advection = mpcalc.advection(temp_850.metpy.quantify(), [u_wind.metpy.quantify(), v_wind.metpy.quantify()],
+                                      dx=dx, dy=dy).metpy.dequantify().to('degC/s')
+
+    fig, ax = plt.subplots(figsize=(20, 12), subplot_kw={'projection': ccrs.PlateCarree()})
+    fig.patch.set_facecolor('lightsteelblue')
+    plot_background(ax)
+    cf = ax.contourf(lon_2d, lat_2d, temp_advection, cmap='coolwarm', levels=np.linspace(-20, 20, 41), extend='both')
+    ax.barbs(lon_2d[::5, ::5], lat_2d[::5, ::5], u_wind[::5, ::5], v_wind[::5, ::5], transform=ccrs.PlateCarree(), length=6)
+    ax.set_title('850-hPa Temperature Advection and Heights', fontsize=16)
+    cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03)
+    cb.set_label('Temperature Advection (degC/s)', size='large')
+    plt.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.05)
+    fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=24, y=1.02)
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf
+
+# Function to generate 850-hPa Moisture Advection Map
+def generate_moisture_advection_map(ds, run_date):
+    lon = ds['longitude'].values
+    lat = ds['latitude'].values
+    lon_2d, lat_2d = np.meshgrid(lon, lat)
+    heights = ds['Geopotential_height_isobaric'].sel(isobaric=85000, method='nearest').squeeze().values.copy()
+    u_wind = ds['u-component_of_wind_isobaric'].sel(isobaric=85000, method='nearest').squeeze().copy()
+    v_wind = ds['v-component_of_wind_isobaric'].sel(isobaric=85000, method='nearest').squeeze().copy()
+
+    # Calculate moisture advection
+    rh_850 = ds['Relative_humidity_isobaric'].sel(isobaric=85000, method='nearest').squeeze().copy()
+    dx, dy = mpcalc.lat_lon_grid_deltas(lon_2d, lat_2d)
+    moisture_advection = mpcalc.advection(rh_850.metpy.quantify(), [u_wind.metpy.quantify(), v_wind.metpy.quantify()],
+                                          dx=dx, dy=dy).metpy.dequantify() * 1e4
+
+    fig, ax = plt.subplots(figsize=(20, 12), subplot_kw={'projection': ccrs.PlateCarree()})
+    fig.patch.set_facecolor('lightsteelblue')
+    plot_background(ax)
+    cf = ax.contourf(lon_2d, lat_2d, moisture_advection, cmap='BuGn', extend='both')
+    ax.barbs(lon_2d[::5, ::5], lat_2d[::5, ::5], u_wind[::5, ::5], v_wind[::5, ::5], transform=ccrs.PlateCarree(), length=6)
+    ax.set_title('850-hPa Moisture Advection and Heights', fontsize=16)
+    cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03)
+    cb.set_label(r'Moisture Advection ($10^4$)', size='large')
+    plt.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.05)
+    fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=24, y=1.02)
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+
+    return buf
+
+
 @bot.command()
 async def wind300(ctx):
     await ctx.send('Generating 300 hPa wind map, please wait...')
@@ -317,7 +394,7 @@ async def wind300(ctx):
     try:
         ds, run_date = get_gfs_data_for_level(30000)
         image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 30000, 'wind_speed', 'YlGnBu', '300-hPa Wind Speeds and Heights', 'Wind Speed (knots)'))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='wind300_{run_date.strftime("%HZ".png'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='wind300.png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -328,7 +405,7 @@ async def vort500(ctx):
     try:
         ds, run_date = get_gfs_data_for_level(50000)
         image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 50000, 'vorticity', 'seismic', '500-hPa Absolute Vorticity and Heights', r'Vorticity ($10^{-5}$ s$^{-1}$)', levels=np.linspace(-20, 20, 41)))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='vort500_{run_date.strftime("%HZ").png'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='vort500.png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -339,7 +416,7 @@ async def rh700(ctx):
     try:
         ds, run_date = get_gfs_data_for_level(70000)
         image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 70000, 'relative_humidity', 'BuGn', '700-hPa Relative Humidity and Heights', 'Relative Humidity (%)'))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='rh700_{run_date.strftime("%HZ").png'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='rh700").png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -350,7 +427,30 @@ async def wind850(ctx):
     try:
         ds, run_date = get_gfs_data_for_level(85000)
         image_bytes = await loop.run_in_executor(None, lambda: generate_map(ds, run_date, 85000, 'wind_speed', 'PuRd', '850-hPa Wind Speeds and Heights', 'Wind Speed (knots)'))
-        await ctx.send(file=discord.File(fp=image_bytes, filename='wind850_{run_date.strftime("%HZ").png'))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='wind850).png'))
+    except Exception as e:
+        await ctx.send(f'An error occurred: {e}')
+
+
+@bot.command()
+async def tAdv850(ctx):
+    await ctx.send('Generating 850 hPa Temperature Advection map, please wait...')
+    loop = asyncio.get_event_loop()
+    try:
+        ds, run_date = get_gfs_data_for_level(85000)
+        image_bytes = await loop.run_in_executor(None, lambda: generate_temp_advection_map(ds, run_date))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='tempAdvection850.png'))
+    except Exception as e:
+        await ctx.send(f'An error occurred: {e}')
+
+@bot.command()
+async def mAdv850(ctx):
+    await ctx.send('Generating 850 hPa Moisture Advection map, please wait...')
+    loop = asyncio.get_event_loop()
+    try:
+        ds, run_date = get_gfs_data_for_level(85000)
+        image_bytes = await loop.run_in_executor(None, lambda: generate_moisture_advection_map(ds, run_date))
+        await ctx.send(file=discord.File(fp=image_bytes, filename='moistureAdvection850.png'))
     except Exception as e:
         await ctx.send(f'An error occurred: {e}')
 
@@ -361,7 +461,7 @@ async def surfaceTemp(ctx):
     try:
         image_bytes = await loop.run_in_executor(None, generate_surface_temp_map)
         if image_bytes:
-            await ctx.send(file=discord.File(fp=image_bytes, filename='surfaceTemp_{run_date.strftime("%HZ").png'))
+            await ctx.send(file=discord.File(fp=image_bytes, filename='surfaceTemp.png'))
         else:
             await ctx.send('Failed to generate surface temperature map.')
     except Exception as e:
