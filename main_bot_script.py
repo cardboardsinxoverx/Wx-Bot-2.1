@@ -758,43 +758,70 @@ async def active_storms(ctx):
         print(f"Error occurred: {e}")
         await ctx.send("An error occurred while fetching active storm data. Please try again later.")
 
+######################################################################################################################################
+######################################################################################################################################
+######################################################################################################################################
+# Tropical Cyclone Rainfall Command
+#
+#
+#
+
+# Initialize bot and datasets
+basin = tracks.TrackDataset(basin='north_atlantic')
+rain_dataset = rain.RainDataset()
+
 @bot.command()
 async def rainfall(ctx, storm_name: str, year: int):
-    """Displays tropical cyclone rainfall data for a historical storm."""
-
+    """Displays rainfall data for a storm as a geographical map."""
     try:
-        # Load dataset for the desired basin (e.g., North Atlantic)
-        basin = tracks.TrackDataset(basin='north_atlantic')
-
-        # Get the storm from the dataset
+        # Fetch storm and rainfall data
         storm = basin.get_storm((storm_name, year))
+        storm_rain = rain_dataset.get_storm_rainfall(storm)
+        print(f"Type of storm_rain: {type(storm_rain)}")
+        print(f"Columns: {storm_rain.columns}")
 
-        if storm:
-            embed = discord.Embed(title=f"{storm_name} ({year}) - Rainfall Data", color=discord.Color.blue())
+        # Verify DataFrame and required columns
+        if not isinstance(storm_rain, pd.DataFrame):
+            await ctx.send("Error: Expected a DataFrame but got a different type.")
+            return
 
-            # Attempt to generate and send rainfall plot
-            try:
-                rainfall_image_path = f'/home/evanl/Documents/{storm_name}_{year}_rainfall.png'
+        if 'Lat' not in storm_rain.columns or 'Lon' not in storm_rain.columns:
+            raise ValueError("DataFrame missing 'Lat' or 'Lon' columns")
+        if 'Total' not in storm_rain.columns:
+            raise ValueError("DataFrame missing 'Total' column for rainfall")
 
-                # Plot the rainfall using Tropycal's method
-                storm.plot_TC_rain(save_path=rainfall_image_path)
+        # Create map with Cartopy
+        fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree()})
+        ax.set_extent([storm_rain['Lon'].min() - 5, storm_rain['Lon'].max() + 5,
+                       storm_rain['Lat'].min() - 5, storm_rain['Lat'].max() + 5],
+                      crs=ccrs.PlateCarree())
 
-                # Send the image to Discord
-                with open(rainfall_image_path, 'rb') as f:
-                    file = discord.File(f, filename=f'{storm_name}_{year}_rainfall.png')
-                    embed.set_image(url=f'attachment://{storm_name}_{year}_rainfall.png')
-                    await ctx.send(file=file, embed=embed)
+        # Add geographical features
+        ax.add_feature(cfeature.LAND, facecolor='lightgray')
+        ax.add_feature(cfeature.COASTLINE)
+        ax.add_feature(cfeature.BORDERS, linestyle=':')
 
-            except Exception as e:
-                print(f"Error generating or sending rainfall plot: {e}")
-                await ctx.send("An error occurred while generating the rainfall plot.")
+        # Plot rainfall as a scatter map
+        sc = ax.scatter(storm_rain['Lon'], storm_rain['Lat'], c=storm_rain['Total'],
+                        cmap='Blues', s=10, transform=ccrs.PlateCarree())
+        plt.colorbar(sc, ax=ax, label='Total Rainfall (units)')
 
-        else:
-            await ctx.send(f"Storm '{storm_name}' from {year} not found in the dataset.")
+        # Save and send the plot
+        path = f"{storm_name}_{year}_rainfall.png"
+        plt.savefig(path, bbox_inches='tight')
+        plt.close()
+
+        # Embed the image in Discord
+        embed = discord.Embed(title=f"{storm_name} ({year}) Rainfall", color=discord.Color.blue())
+        file = discord.File(path, filename=path)
+        embed.set_image(url=f"attachment://{path}")
+        await ctx.send(file=file, embed=embed)
 
     except Exception as e:
-        print(f"Error occurred: {e}")
-        await ctx.send("An error occurred while fetching storm data. Please try again later.")
+        print(f"Error: {e}")
+        await ctx.send(f"wrd did this: {e}")
+#######################################################################################################
+
 
 # Initialize Realtime object
 realtime_obj = realtime.Realtime()
