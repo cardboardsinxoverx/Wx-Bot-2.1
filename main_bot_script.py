@@ -76,7 +76,6 @@ import time
 import re
 from fuzzywuzzy import fuzz
 import io
-import meteogram as mg
 import metpy.interpolate as mpinterpolate
 from matplotlib.colors import LinearSegmentedColormap
 from skewt import skewt  # Import the skewt command function
@@ -98,8 +97,8 @@ from wrd_wx import wrd_wx
 from weather_maps import wind300, vort500, rh700, wind850, surfaceTemp, tAdv850, mAdv850
 # from eu_weather_maps import eu_wind300, eu_vort500, eu_rh700, eu_wind850, eu_surfaceTemp
 from hurricane import hurricane
-from georgia_temp import georgia_temp
 import discord
+from astro import astro_command, astro_help
 
 # Initialize the bot
 intents = discord.Intents.default()
@@ -110,8 +109,10 @@ OPENWEATHERMAP_API_KEY = 'efd4f5ec6d2b16958a946b2ceb0419a6'
 
 bot.add_command(hurricane)
 
-# --- Imported ga map Command ---
-bot.add_command(georgia_temp)
+# Add the astro command to the bot
+@bot.command(name='astro', help=astro_help)
+async def astro(ctx, location: str = None, time=None):
+    await astro_command(ctx, location, time)
 
 # --- Imported wrd map Command ---
 bot.add_command(wrd_wx)
@@ -521,25 +522,15 @@ async def meteogram(ctx, icao: str, hoursback: int):
             await ctx.send("No valid METAR data available for plotting.")
             return
 
-        # Convert temperatures to Fahrenheit
-        df['tempF'] = (df['temperature'] * 9 / 5) + 32
-        df['dewF'] = (df['dewpoint'] * 9 / 5) + 32
+        # Convert temperatures to Fahrenheit using smoothed values
+        df['tempF_smoothed'] = (df['temperature_smoothed'] * 9 / 5) + 32
+        df['dewF_smoothed'] = (df['dewpoint_smoothed'] * 9 / 5) + 32
 
-        # Calculate heat index, wind chill, etc.
-        df['heat_index'] = to_heat_index(df['tempF'].values, df['dewF'].values)
-        df.loc[df['tempF'] < 80, 'heat_index'] = np.nan
-        df['wind_chill'] = to_wind_chill(df['tempF'].values, df['wind_speed'].values)
-        df.loc[(df['wind_speed'] <= 5) | (df['tempF'] > 50), 'wind_chill'] = np.nan
-
-        # Wet bulb temperature calculation with error handling
-        try:
-            df['wet_bulb'] = mpcalc.wet_bulb_temperature(
-                df['pressure'].values * units('hPa'),
-                df['temperature'].values * units('degC'),
-                df['dewpoint'].values * units('degC')
-            ).to('degF').m
-        except ValueError:
-            df['wet_bulb'] = np.nan  # Handle failure to calculate
+        # Calculate heat index, wind chill using smoothed values
+        df['heat_index'] = to_heat_index(df['tempF_smoothed'].values, df['dewF_smoothed'].values)
+        df.loc[df['tempF_smoothed'] < 80, 'heat_index'] = np.nan
+        df['wind_chill'] = to_wind_chill(df['tempF_smoothed'].values, df['wind_speed'].values)
+        df.loc[(df['wind_speed'] <= 5) | (df['tempF_smoothed'] > 50), 'wind_chill'] = np.nan
 
         # Create subplots
         fig, axs = plt.subplots(4, 1, figsize=(20, 16), sharex=True)
@@ -552,25 +543,32 @@ async def meteogram(ctx, icao: str, hoursback: int):
         # Set title for the top subplot (axs[0])
         axs[0].set_title(f'Meteogram for {icao.upper()} - Last {hoursback} hours (Generated at: {utc_time.strftime("%Y-%m-%d %H:%M UTC")})', weight='bold', size='16')
 
-        # 1. Temperature, Dewpoint, Wet Bulb, Heat Index, Wind Chill
-        if not df[['tempF', 'dewF']].isnull().all().any():
-            plt.sca(axs[0])  # Set the current axes to axs[0]
-            plt.plot(df['time'], df['tempF'], label='Temperature (°F)', linewidth=3, color='tab:red')
-            plt.plot(df['time'], df['dewF'], label='Dewpoint (°F)', linewidth=3, color='tab:green')
+        # 1. Temperature, Dewpoint, Wet Bulb, Heat Index, Wind Chill, and Relative Humidity
+        if not df[['tempF_smoothed', 'dewF_smoothed']].isnull().all().any():
+            plt.sca(axs[0])
+            plt.plot(df['time'], df['tempF_smoothed'], label='Temperature (°F)', linewidth=3, color='tab:red')
+            plt.plot(df['time'], df['dewF_smoothed'], label='Dewpoint (°F)', linewidth=3, color='tab:green')
             plt.plot(df['time'], df['wet_bulb'], label='Wet Bulb (°F)', linewidth=3, linestyle='dotted', color='tab:blue')
             plt.plot(df['time'], df['heat_index'], label='Heat Index (°F)', linestyle='--', color='tab:orange')
             plt.plot(df['time'], df['wind_chill'], label='Wind Chill (°F)', linestyle='--', color='tab:purple')
 
             axs[0].set_ylabel('Temperature (°F)')
             axs[0].legend(loc='upper left', fontsize=14, frameon=True, title='Temperature / Dewpoint', prop={'size':10})
+
+            # Add relative humidity on secondary y-axis
+            ax2 = axs[0].twinx()
+            ax2.plot(df['time'], df['relative_humidity'], label='Relative Humidity (%)', color='tab:cyan', linewidth=2)
+            ax2.set_ylabel('Relative Humidity (%)', color='tab:cyan')
+            ax2.tick_params(axis='y', labelcolor='tab:cyan')
+            ax2.set_ylim(0, 100)
+            ax2.legend(loc='upper right', fontsize=14, frameon=True, title='Relative Humidity', prop={'size':10})
         else:
-            axs[0].axhline(0, color='black')  # x-axis line
+            axs[0].axhline(0, color='black')
             axs[0].set_ylabel('Temperature (°F)')
 
         # 2. Wind Speed and Gusts
         valid_wind_data = df.dropna(subset=['wind_direction', 'wind_speed', 'wind_gusts'], how='all')
         if not valid_wind_data.empty:
-            # Calculate vmin and vmax based on actual wind speed data
             vmin = valid_wind_data['wind_speed'].min()
             vmax = valid_wind_data['wind_speed'].max()
 
@@ -587,7 +585,7 @@ async def meteogram(ctx, icao: str, hoursback: int):
             axs[1].set_ylabel('Wind Speed (kts)')
             axs[1].legend(loc='upper left', fontsize=14, frameon=True, title='Wind speed & Direction', prop={'size':10})
         else:
-            axs[1].axhline(0, color='black')  # x-axis line
+            axs[1].axhline(0, color='black')
             axs[1].set_ylabel('Wind Speed (kts)')
 
         # 3. Pressure
@@ -597,7 +595,7 @@ async def meteogram(ctx, icao: str, hoursback: int):
             axs[2].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
             axs[2].legend(loc='upper left', fontsize=14, frameon=True, title='Pressure (hPa)', prop={'size':10})
         else:
-            axs[2].axhline(0, color='black')  # x-axis line
+            axs[2].axhline(0, color='black')
             axs[2].set_ylabel('Pressure (hPa)')
 
         # 4. Cloud Cover and Vertical Visibility as Scatter Plot
@@ -608,52 +606,41 @@ async def meteogram(ctx, icao: str, hoursback: int):
 
         axs[3].set_ylabel('Cloud Cover / Vertical Visibility (ft)')
         axs[3].legend(loc='upper left', fontsize=14, frameon=True, title='Cloud Cover', prop={'size':10})
-        axs[3].set_ylim(0)  # NO CLOUDS UNDERGROUND DAMMIT
+        axs[3].set_ylim(0)
 
         # Further control x-axis ticks and labels formatting
         for ax in axs:
-            ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))  # Major ticks every 12 hours
-            ax.xaxis.set_minor_locator(mdates.HourLocator(interval=3))   # Minor ticks every 3 hours
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%d %H:%M'))  # Set date format to Day and Hour
+            ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
+            ax.xaxis.set_minor_locator(mdates.HourLocator(interval=3))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%d %H:%M'))
 
-        # Ensure x-axis tick labels are shown on all subplots
-        for ax in axs[:-1]:  # Apply to all but the last subplot
-            ax.xaxis.set_tick_params(labelbottom=True)  # Force tick labels on
+        for ax in axs[:-1]:
+            ax.xaxis.set_tick_params(labelbottom=True)
 
-        # Rotate x-axis labels on all subplots and set font size
-        plt.setp(axs[-1].get_xticklabels(), rotation=60, fontsize=8)  # Last subplot
-        plt.setp([ax.get_xticklabels() for ax in axs[:-1]], rotation=60, fontsize=8)  # Other subplots
+        plt.setp(axs[-1].get_xticklabels(), rotation=60, fontsize=8)
+        plt.setp([ax.get_xticklabels() for ax in axs[:-1]], rotation=60, fontsize=8)
 
-         # Refine grid and background handling
         for ax in axs:
-            ax.grid(True, zorder=0)  # Draw grid lines first with low zorder
-
-            # Get the y-axis limits
+            ax.grid(True, zorder=0)
             ymin, ymax = ax.get_ylim()
-
-            # Get y-ticks and color every other y-axis space using axhspan
             y_ticks = ax.get_yticks()
             for i in range(len(y_ticks) - 1):
                 if i % 2 == 0:
-                    ax.axhspan(y_ticks[i], y_ticks[i+1], color='limegreen', alpha=0.3, zorder=1)  # Background with slightly higher zorder
+                    ax.axhspan(y_ticks[i], y_ticks[i+1], color='limegreen', alpha=0.3, zorder=1)
 
-        # Adjust subplot spacing and figure size
         fig.subplots_adjust(hspace=0.4, left=0.05, right=0.97, top=0.95, bottom=0.1)
 
         # METOC Logo
-        logo_img = plt.imread('/home/evanl/Documents/boxlogo2.png')  # Replace with your logo's actual path
-        imagebox = OffsetImage(logo_img, zoom=0.125)  # Adjust 'zoom' to control logo size
+        logo_img = plt.imread('/home/evanl/Documents/bot/boxlogo2.png')
+        imagebox = OffsetImage(logo_img, zoom=0.125)
         ab = AnnotationBbox(imagebox, (0.98, 3.25), xycoords='axes fraction', frameon=False, box_alignment=(1, 0))
         ax.add_artist(ab)
         # UGA Logo
-        usmc_img = plt.imread('/home/evanl/Documents/uga_logo.png')  # Replace with your logo's actual path
-        imagebox = OffsetImage(usmc_img, zoom=0.075)  # Adjust 'zoom' to control logo size
+        usmc_img = plt.imread('/home/evanl/Documents/bot/Georgia_Bulldogs_logo.png')
+        imagebox = OffsetImage(usmc_img, zoom=0.50)
         abx = AnnotationBbox(imagebox, (0.995, 2.45), xycoords='axes fraction', frameon=False, box_alignment=(1, 0))
         ax.add_artist(abx)
 
-        #plt.tight_layout()
-
-        # Save and send the image
         img_buf = io.BytesIO()
         plt.savefig(img_buf, format='png')
         img_buf.seek(0)
@@ -1300,411 +1287,7 @@ Fetches a satellite image for the specified region and product code.
 
 import airportsdata
 import ephem
-from matplotlib.gridspec import GridSpec
 
-# Define a custom converter for time
-class TimeConverter(commands.Converter):
-    async def convert(self, ctx, argument):
-        try:
-            hour, minute = map(int, argument.split(':'))
-            return datetime(year=2024, month=1, day=1, hour=hour, minute=minute).time()
-        except ValueError:
-            raise commands.BadArgument("Invalid time format. Please use 'HH:MM' (e.g., '14:30').")
-
-@bot.command()
-async def astro(ctx, location: str = None, time: TimeConverter = None):
-    """Provides sunrise, sunset, moon phase, twilight info, and solar system overview for a given location and time."""
-
-    if not location:
-        await ctx.send("Please provide an ICAO code or latitude/longitude pair (e.g., '$astro kmge' or '$astro 34.05/-118.25')")
-        return
-
-    try:
-        if '/' in location:  # Check if input is a latitude/longitude pair
-            try:
-                lat, lon = map(float, location.split('/'))
-                lat = round(lat, 4)
-                lon = round(lon, 4)
-            except ValueError:
-                raise ValueError("Invalid latitude/longitude format. Please use 'lat/lon' (e.g., '34.0500/-118.2500').")
-        else:
-            # Get airport data using ICAO code
-            airports = airportsdata.load('icao')
-            airport = airports.get(location.upper())
-            if not airport:
-                raise ValueError("Airport not found.")
-
-            # Extract latitude and longitude
-            lat = round(airport['lat'], 4)
-            lon = round(airport['lon'], 4)
-
-        # Determine time zone (use lat, lon from airport data)
-        tf = TimezoneFinder()
-        timezone = tf.timezone_at(lng=lon, lat=lat)
-
-        if time:
-            # Create a datetime object with the specified hour and minute in the local timezone
-            local_time = datetime.now(pytz.timezone(timezone)).replace(hour=time.hour, minute=time.minute, second=0, microsecond=0)
-        else:
-            # Use the current local time
-            local_time = datetime.now(pytz.timezone(timezone))
-
-        # Convert the local time to UTC for PyEphem
-        now = local_time.astimezone(pytz.utc)
-
-        now_local = now.astimezone(pytz.timezone(timezone))  # Convert UTC time to local time for display
-
-        # Define observer before setting date
-        obs = ephem.Observer()
-
-        # Assuming local_time is defined earlier, and we convert it to UTC for PyEphem
-        now = local_time.astimezone(pytz.utc)
-
-        # Create a single figure with multiple subplots
-        fig = plt.figure(figsize=(20, 16))  # Create one combined figure
-        fig.patch.set_facecolor('lightsteelblue')
-
-        # Create grid layout for subplots
-        gs = GridSpec(2, 1, height_ratios=[2, 1])  # Top plot takes more height than the bottom plot
-
-        # --- Sun and Moon Plot (Top Plot) ---
-        ax1 = fig.add_subplot(gs[0])
-
-        # Calculate sunrise, sunset, twilight, etc.
-        obs.lat = str(lat)  # Use latitude
-        obs.lon = str(lon)  # Use longitude
-        obs.date = now
-
-        sun = ephem.Sun()
-        moon = ephem.Moon()
-
-        # Sunrise and Sunset Calculations
-        sunrise = ephem.localtime(obs.next_rising(sun))
-        sunset = ephem.localtime(obs.next_setting(sun))
-
-        # Adjust sunrise and sunset for the Southern Hemisphere
-        is_southern_hemisphere = float(lat) < 0
-
-        if is_southern_hemisphere:
-            # Swap sunrise and sunset if in the Southern Hemisphere
-            sunrise, sunset = sunset, sunrise
-
-        # Twilight Calculations
-        obs.horizon = '-0:34'  # Civil twilight
-        civil_twilight_begin = ephem.localtime(obs.previous_rising(sun, use_center=True))
-        civil_twilight_end = ephem.localtime(obs.next_setting(sun, use_center=True))
-
-        obs.horizon = '-6'  # Nautical twilight
-        nautical_twilight_begin = ephem.localtime(obs.previous_rising(sun, use_center=True))
-        nautical_twilight_end = ephem.localtime(obs.next_setting(sun, use_center=True))
-
-        obs.horizon = '-12'  # Astronomical twilight
-        astronomical_twilight_begin = ephem.localtime(obs.previous_rising(sun, use_center=True))
-        astronomical_twilight_end = ephem.localtime(obs.next_setting(sun, use_center=True))
-
-        # Calculate moon phase
-        moon.compute(obs.date)
-        moon_phase = moon.phase
-
-        # Generate Sun Path Plot
-        ax1.patch.set_facecolor('white')
-        times = [now + timedelta(minutes=15 * i) for i in range(96)]
-
-        # Define observer and sun
-        obs.lat = str(lat)
-        obs.lon = str(lon)
-        sun = ephem.Sun()
-
-        # --- BEGIN MODIFICATIONS TO FIX THE FLAT LINE ISSUE ---
-        # List to store segments
-        segments = []
-        current_segment = []
-        current_linestyle = None
-
-        # Iterate through each time interval to compute sun position
-        for i, time in enumerate(times):
-            obs.date = time
-            sun.compute(obs)
-            azimuth = np.degrees(sun.az)
-            altitude = np.degrees(sun.alt)
-
-            # Handle azimuth wrapping (ensure smooth transitions)
-            if current_segment:
-                prev_azimuth, prev_altitude = current_segment[-1]
-
-                # Check for large azimuth or altitude jump to prevent wraparound lines
-                if abs(azimuth - prev_azimuth) > 180 or abs(altitude - prev_altitude) > 45:
-                    # Save the current segment and start a new one
-                    segments.append((current_segment, current_linestyle))
-                    current_segment = []
-
-            # Determine linestyle based on altitude
-            linestyle = '-' if altitude >= 0 else '-.'
-
-            # If linestyle changes, save the current segment and start a new one
-            if current_linestyle is not None and linestyle != current_linestyle:
-                segments.append((current_segment, current_linestyle))
-                current_segment = []
-
-            current_linestyle = linestyle
-            current_segment.append((azimuth, altitude))
-
-        # Append the last segment if it's not empty
-        if current_segment:
-            segments.append((current_segment, current_linestyle))
-
-        # Plotting the segments
-        for segment, linestyle in segments:
-            if len(segment) < 2:
-                continue  # Skip segments that are too small
-
-            azimuths, altitudes = zip(*segment)
-            azimuths = [az % 360 for az in azimuths]  # Adjust azimuths back to the 0-360 range for plotting
-
-            # Plot only if azimuths are continuous
-            if max(azimuths) - min(azimuths) < 180:
-                ax1.plot(azimuths, altitudes, color='orange', lw=3, linestyle=linestyle)
-        # --- END OF MODIFICATIONS ---
-
-        # Plot current sun and moon positions
-        obs.date = now
-        sun.compute(obs)
-        moon.compute(obs)
-
-        current_sun_az = np.degrees(sun.az)
-        current_sun_alt = np.degrees(sun.alt)
-
-        current_moon_az = np.degrees(moon.az)
-        current_moon_alt = np.degrees(moon.alt)
-
-        # Plot twilight periods along y-axis
-        ax1.axhspan(-90, -12, color='midnightblue', alpha=0.3, label='Astronomical Twilight')
-        ax1.axhspan(-12, -6, color='deepskyblue', alpha=0.3, label='Nautical Twilight')
-        ax1.axhspan(-6, -0.34, color='lightskyblue', alpha=0.3, label='Civil Twilight')
-        # Shade nighttime
-        ax1.axhspan(-90, -18, color='black', alpha=0.5, label='Night')
-
-        # Mark the current position of the sun
-        ax1.scatter(current_sun_az, current_sun_alt, color='yellow', edgecolors='black', s=150, label='Current Sun Position', zorder=3)
-
-        # Mark the current position of the moon
-        ax1.scatter(current_moon_az, current_moon_alt, color='gray', edgecolors='black', s=150, label='Current Moon Position', zorder=3)
-
-        # Horizon Line
-        ax1.axhline(0, color='blue', linestyle='--', lw=1.5, label='Horizon')
-
-        # Add text with ALL astronomy information to the plot
-        moon_phase_text = f"Moon Phase: {moon_phase:.1f}% illuminated"
-        if moon.phase < 50:
-            moon_phase_text += " (Waning)"
-        else:
-            moon_phase_text += " (Waxing)"
-
-        # Calculate solar noon
-        now = datetime.utcnow()  # Get current UTC time
-        obs.date = now.strftime('%Y/%m/%d %H:%M:%S')  # Set observer date to current time or user-specified time
-        solar_noon = ephem.localtime(obs.next_transit(sun))  # Calculate solar noon time
-
-        # Calculate solar altitude at solar noon
-        obs.date = solar_noon
-        sun.compute(obs)
-        solar_noon_altitude = np.degrees(sun.alt)
-
-        # Determine optimal solar panel angle (basic example)
-        lat_deg = np.degrees(float(obs.lat))  # Get observer's latitude in degrees
-        optimal_angle = lat_deg  # Use latitude as a basic approximation for optimal solar panel angle
-
-        textstr = f"Sun Azimuth: {current_sun_az:.1f}°\n" \
-                  f"Moon Azimuth: {current_moon_az:.1f}°\n" \
-                  f"Moon Elevation: {current_moon_alt:.1f}°\n" \
-                  f"{moon_phase_text}\n\n" \
-                  f"Sunrise: {sunrise.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Sunset: {sunset.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Civil Twilight Begin: {civil_twilight_begin.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Civil Twilight End: {civil_twilight_end.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Nautical Twilight Begin: {nautical_twilight_begin.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Nautical Twilight End: {nautical_twilight_end.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Astronomical Twilight Begin: {astronomical_twilight_begin.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Astronomical Twilight End: {astronomical_twilight_end.strftime('%Y-%m-%d %I:%M %p %Z')}\n" \
-                  f"Optimal Solar Panel Angle: ({optimal_angle:.1f}°)"
-
-        # These are matplotlib.patch.Patch properties
-        props = dict(boxstyle='round', facecolor='wheat')
-
-        # Use plt.figtext to place the text
-        plt.figtext(0.05, 0.25, textstr, fontsize=14, weight='bold', va="top", bbox=props)  # Moved text lower
-
-        # Labels and title
-        ax1.set_title(f"Sun/Moon Position: {location.upper() if '/' not in location else f'Lat: {lat}, Lon: {lon}'} - {lat:.4f}, {lon:.4f}\n{now_local.strftime('%b %d %Y %H:%M')} Local Time", fontsize=14, weight='bold')
-        ax1.set_xlabel("Azimuth (degrees)", weight='bold')
-        ax1.set_ylabel("Altitude (degrees)", weight='bold')
-        ax1.set_xlim(0, 360)
-        ax1.set_ylim(-90, 90)
-
-        # Customize x-axis to show BOTH cardinal directions and degrees
-        ax1.set_xticks([0, 45, 90, 135, 180, 225, 270, 315, 360])
-        ax1.set_xticklabels(['N\n0°', 'NE\n45°', 'E\n90°', 'SE\n135°', 'S\n180°', 'SW\n225°', 'W\n270°', 'NW\n315°', 'N\n360°'])
-
-        # Annotate the current sun position with specific cardinal direction and azimuth angle
-        if 348.75 <= current_sun_az <= 360 or 0 <= current_sun_az < 11.25:
-            sun_direction = "N"
-        elif 11.25 <= current_sun_az < 33.75:
-            sun_direction = "NNE"
-        elif 33.75 <= current_sun_az < 56.25:
-            sun_direction = "NE"
-        elif 56.25 <= current_sun_az < 78.75:
-            sun_direction = "ENE"
-        elif 78.75 <= current_sun_az < 101.25:
-            sun_direction = "E"
-        elif 101.25 <= current_sun_az < 123.75:
-            sun_direction = "ESE"
-        elif 123.75 <= current_sun_az < 146.25:
-            sun_direction = "SE"
-        elif 146.25 <= current_sun_az < 168.75:
-            sun_direction = "SSE"
-        elif 168.75 <= current_sun_az < 191.25:
-            sun_direction = "S"
-        elif 191.25 <= current_sun_az < 213.75:
-            sun_direction = "SSW"
-        elif 213.75 <= current_sun_az < 236.25:
-            sun_direction = "SW"
-        elif 236.25 <= current_sun_az < 258.75:
-            sun_direction = "WSW"
-        elif 258.75 <= current_sun_az < 281.25:
-            sun_direction = "W"
-        elif 281.25 <= current_sun_az < 303.75:
-            sun_direction = "WNW"
-        elif 303.75 <= current_sun_az < 326.25:
-            sun_direction = "NW"
-        else:  # 326.25 <= current_sun_az < 348.75
-            sun_direction = "NNW"
-
-        # Annotate the current sun position
-        ax1.annotate(f"{sun_direction} (Cardinal Direction)\nAzimuth: ({current_sun_az:.1f}°)\nElevation: ({current_sun_alt:.1f}°)",
-                    (current_sun_az, current_sun_alt), textcoords="offset points",
-                    xytext=(10, 10), ha='center', fontsize=10, color='darkred', fontweight='bold')
-
-        # Annotate the current moon position with cardinal direction, azimuth, and altitude
-        if 0 <= current_moon_az < 45 or 315 <= current_moon_az <= 360:
-            moon_direction = "N"
-        elif 45 <= current_moon_az < 135:
-            moon_direction = "E"
-        elif 135 <= current_moon_az < 225:
-            moon_direction = "S"
-        else:
-            moon_direction = "W"
-
-        ax1.annotate(f"{moon_direction} (Cardinal Direction)\nAzimuth: ({current_moon_az:.1f})\nElevation: ({current_moon_alt:.1f}°)",
-                    (current_moon_az, current_moon_alt), textcoords="offset points",
-                    xytext=(10, 10), ha='center', fontsize=10, color='black', fontweight='bold')
-
-        # Load and resize the icons, multiplying the height scaling by 3 for a larger size
-        dpi = fig.dpi
-        quarter_inch_in_pixels = 0.25 * dpi * 4  # 3x larger than original quarter inch height
-
-        uga_logo = Image.open('/home/evanl/Documents/uga_logo.png')
-        photo = Image.open('/home/evanl/Documents/boxlogo2.png')
-
-        uga_logo_resized = uga_logo.resize((int(quarter_inch_in_pixels * uga_logo.width / uga_logo.height), int(quarter_inch_in_pixels)))
-        photo_resized = photo.resize((int(quarter_inch_in_pixels * photo.width / photo.height), int(quarter_inch_in_pixels)))
-
-        # Add the resized icons to the plot
-        ax1.figure.figimage(uga_logo_resized, 10, fig.bbox.ymax - uga_logo_resized.height - 10, zorder=1)
-        ax1.figure.figimage(photo_resized, fig.bbox.xmax - photo_resized.width - 10, fig.bbox.ymax - photo_resized.height - 10, zorder=1)
-
-        ax1.legend()
-        ax1.grid(True, linestyle='--', alpha=0.5)
-
-        # --- Solar System Overview (Bottom Plot) ---
-        ax3 = fig.add_subplot(gs[1], projection='polar')
-
-        # Plot the Sun at the center
-        ax3.scatter(0, 0, color='yellow', s=100, edgecolor='black', label='Sun', zorder=3)
-
-        # Define planetary objects (including Earth)
-        planets = {
-            'Mercury': ephem.Mercury(),
-            'Venus': ephem.Venus(),
-            'Earth': 'Earth',  # Placeholder for Earth
-            'Mars': ephem.Mars(),
-            'Jupiter': ephem.Jupiter(),
-            'Saturn': ephem.Saturn(),
-            'Uranus': ephem.Uranus(),
-            'Neptune': ephem.Neptune(),
-            'Pluto': ephem.Pluto(),
-        }
-
-        planet_colors = {
-            'Mercury': 'grey',
-            'Venus': 'goldenrod',
-            'Earth': 'green',  # Color for Earth
-            'Mars': 'red',
-            'Jupiter': 'orange',
-            'Saturn': 'gold',
-            'Uranus': 'cyan',
-            'Neptune': 'blue',
-            'Pluto': 'darkgrey',
-        }
-
-        # Plot each planet
-        for name, planet in planets.items():
-            if name == 'Earth':
-                # Compute Earth's heliocentric longitude
-                sun.compute(obs)
-                earth_hlon = (sun.hlon + np.pi) % (2 * np.pi)  # Earth's heliocentric longitude is opposite the Sun's
-                r = 1  # Earth's average distance from the Sun is 1 AU
-                theta = earth_hlon
-            else:
-                planet.compute(obs)
-                r = 1 + np.log10(planet.sun_distance)  # Use log to keep distances reasonable
-                theta = planet.hlon  # Longitude of planet in radians
-            ax3.scatter(theta, r, color=planet_colors[name], s=50, label=name, zorder=2)
-
-        # Plot asteroid belt as a ring
-        asteroid_belt_radius = 1.7  # Adjusted radius to be between Mars and Jupiter
-        ax3.plot(np.linspace(0, 2 * np.pi, 500), [asteroid_belt_radius] * 500, '--', color='purple', alpha=0.5, label='Asteroid Belt')
-
-        # Plot Voyager 1 and Voyager 2 positions
-        voyager_1_radius = 3.5
-        voyager_2_radius = 3.3
-        voyager_1_theta = np.radians(120)
-        voyager_2_theta = np.radians(240)
-
-        ax3.scatter(voyager_1_theta, voyager_1_radius, color='black', s=20, label='Voyager 1', zorder=4)
-        ax3.scatter(voyager_2_theta, voyager_2_radius, color='black', s=20, label='Voyager 2', marker='x', zorder=4)
-
-        # Customize the solar system plot
-        ax3.legend(loc='upper right', fontsize=14, bbox_to_anchor=(1.65, 1.0))  # Adjusted legend position
-        ax3.set_title("Solar System Overview", fontsize=14, weight='bold', pad=15)
-        ax3.set_ylim(0, 4)
-        ax3.set_yticklabels([])
-
-        # Adjust the layout of the figure to accommodate both plots
-        plt.tight_layout()
-        plt.subplots_adjust(hspace=0.2)  # Adjust space between subplots for clarity
-
-        # Save the combined plot to a file
-        combined_plot_filename = "/home/evanl/Documents/combined_sun_moon_solar_system_plot.png"
-        plt.savefig(combined_plot_filename, bbox_inches='tight', pad_inches=0.1)
-        plt.close(fig)
-
-        # Send the combined plot via Discord
-        await ctx.send(file=discord.File(combined_plot_filename))
-
-        logging.info(f"User {ctx.author} requested astronomy information for {location}")
-
-    except (AttributeError, ValueError) as e:
-        await ctx.send(f"Error retrieving astronomy information: {e}")
-
-astro.help = """
-**$astro [location]**
-
-Provides sunrise, sunset, moon phase, and twilight information for a given location.
-
-**Arguments:**
-
-*   `location` (optional): The location for which you want to retrieve astronomy information. You can provide an ICAO airport code, or a latitude/longitude pair (e.g., '34.0522/-118.2437' for four decimal places, which represent the ten-thousandth digit).
-"""
 
 # --- Radar Command ---
 @bot.command()
