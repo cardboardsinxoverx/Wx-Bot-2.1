@@ -89,6 +89,10 @@ STATIONS = {
     'TPA': (27.98, -82.53),  # Tampa, FL (KTPA)
     'TVC': (44.74, -85.58),  # Traverse City, MI (KTVC)
     'IAD': (38.94, -77.46),  # Washington, DC (KIAD)
+    'GPT': (30.41, -89.07),  # Gulfport-Biloxi, MS (KGPT)
+    'VQQ': (30.22, -81.88),  # Wrd, FL (KVQQ)
+    'TIH': (-31.94, 115.97), # Perth, Australia (XTIH)
+    'FNY': (55.75, 37.62)    # Moscow, Russia (XFNY)
 }
 
 # Mapping to NWS station IDs with working BUFKIT links
@@ -119,6 +123,10 @@ NWS_STATIONS = {
     'TPA': 'KTPA',  # Tampa, FL
     'TVC': 'KTVC',  # Traverse City, MI
     'IAD': 'KIAD',  # Washington, DC
+    'GPT': 'KGPT',  # Gulfport-Biloxi, MS
+    'VQQ': 'KCRG',  # Wrd, FL
+    'TIH': 'XTIH',  # Perth, Australia
+    'FNY': 'XFNY'   # Moscow, Russia
 }
 
 def parse_bufkit_text(bufkit_text, forecast_hour):
@@ -174,7 +182,7 @@ def parse_bufkit_text(bufkit_text, forecast_hour):
     df = df.apply(pd.to_numeric, errors='coerce')
     return df, valid_time
 
-async def fetch_bufkit_data_async(ctx, station_code, model, forecast_hour, max_retries=10, retry_delay=5):
+async def fetch_bufkit_data_async(ctx, station_code, model, forecast_hour, max_retries=10, retry_delay=2):
     logger.info("Starting BUFKIT data fetch process")
     nws_station = NWS_STATIONS.get(station_code)
     if not nws_station:
@@ -182,8 +190,24 @@ async def fetch_bufkit_data_async(ctx, station_code, model, forecast_hour, max_r
         logger.error(error_msg)
         await ctx.send(error_msg)
         return None, None
-    url = f"http://www.meteor.iastate.edu/~ckarsten/bufkit/data/gfs/gfs3_{nws_station.lower()}.buf"
+
+    # Map model to its directory and file prefix
+    model_dirs = {
+        'gfs': 'gfs/gfs3',
+        'gfsm': 'gfsm/gfs3',  # Added GFSM for completeness (Global Forecast System Medium Range)
+        'nam': 'nam/nam',
+        'namm': 'namm/namm',
+        'rap': 'rap/rap'
+    }
+
+    model_dir = model_dirs.get(model.lower())
+    if not model_dir:
+        await ctx.send(f"Model {model} not supported. Use 'gfs', 'gfsm', 'nam', 'namm', or 'rap'.")
+        return None, None
+
+    url = f"http://www.meteor.iastate.edu/~ckarsten/bufkit/data/{model_dir}_{nws_station.lower()}.buf"
     logger.info(f"Fetching BUFKIT file from {url}")
+
     for attempt in range(max_retries):
         try:
             response = requests.get(url, timeout=10)
@@ -197,15 +221,22 @@ async def fetch_bufkit_data_async(ctx, station_code, model, forecast_hour, max_r
             df, valid_time = parse_bufkit_text(bufkit_text, forecast_hour)
 
             df.replace(-9999.00, np.nan, inplace=True)
-            df = df[df['PRES'] >= 100].copy()  # Filter out pressures below 100 hPa
+            df = df.copy()  # Retain all pressure levels, no filtering below 100 hPa for full profile
 
-            required_cols = ['PRES', 'TMPC', 'DWPC', 'DRCT', 'SKNT']
+            required_cols = {
+                'gfs': ['PRES', 'TMPC', 'DWPC', 'DRCT', 'SKNT'],
+                'gfsm': ['PRES', 'TMPC', 'DWPC', 'DRCT', 'SKNT'],
+                'nam': ['PRES', 'TMPC', 'DWPC', 'DRCT', 'SKNT'],
+                'namm': ['PRES', 'TMPC', 'DWPC', 'DRCT', 'SKNT'],
+                'rap': ['PRES', 'TMPC', 'DWPC', 'DRCT', 'SKNT']  # Adjust if RAP column names differ
+            }[model.lower()]
+
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
                 raise ValueError(f"BUFKIT data missing columns: {missing_cols}")
             df = df[required_cols].copy()
-            df = df.dropna(subset=required_cols)  # Drop NaN values in required columns
-            df = df.drop_duplicates(subset=['PRES'], keep='first')  # Remove duplicate pressures
+            df = df.dropna(subset=required_cols)  # Drop NaN values
+            df = df.drop_duplicates(subset=['PRES'], keep='last')  # Retain highest altitudes
             df.rename(columns={'PRES': 'pressure', 'TMPC': 'temperature', 'DWPC': 'dewpoint'}, inplace=True)
             wind_speed = df['SKNT'].values * units.knots
             wind_dir = df['DRCT'].values * units.degrees
@@ -215,7 +246,7 @@ async def fetch_bufkit_data_async(ctx, station_code, model, forecast_hour, max_r
             pressure_array = df['pressure'].to_numpy() * units.hPa
             height_array = mpcalc.pressure_to_height_std(pressure_array)
             df['height'] = height_array.to('meters').magnitude
-            logger.info(f"Successfully fetched and parsed BUFKIT data for {station_code} at forecast hour {forecast_hour}")
+            logger.info(f"Successfully fetched and parsed BUFKIT data for {station_code} at forecast hour {forecast_hour} with model {model}")
             return df, valid_time
         except requests.exceptions.Timeout:
             logger.error("Request timed out")
@@ -235,7 +266,12 @@ async def fetch_bufkit_data_async(ctx, station_code, model, forecast_hour, max_r
                 return None, None
     return None, None
 
-async def fetch_sounding_data(ctx, time, station_code, data_type, max_retries=10, retry_delay=5):
+async def fetch_sounding_data(ctx, time, station_code, data_type, max_retries=10, retry_delay=2):
+    # Check if the station is supported by WyomingUpperAir (TIH and FNY might not be)
+    if station_code in ['TIH', 'FNY'] and data_type == "observed":
+        await ctx.send(f"Station {station_code} is not supported for observed soundings via University of Wyoming. Try a forecast model instead (e.g., `$skewt {station_code} gfs 0`).")
+        return None
+
     for attempt in range(max_retries):
         try:
             logger.info(f"Attempt {attempt + 1}/{max_retries}: Fetching data for {station_code} at {time}")
@@ -364,6 +400,40 @@ def label_mixing_ratios(skew):
         except Exception as e:
             logger.warning(f"Could not label mixing ratio {mr} g/kg: {e}")
 
+# Define dry_adiabatic_descent function at the top level
+def dry_adiabatic_descent(p_start, T_start, pressures):
+    """
+    Calculate a dry adiabatic descent from a starting pressure and temperature.
+
+    Parameters:
+    - p_start: Starting pressure (e.g., hPa, Pint Quantity)
+    - T_start: Starting temperature (e.g., degC, Pint Quantity)
+    - pressures: Array of pressures to descend through (e.g., hPa, Pint Quantity)
+
+    Returns:
+    - Temperature profile (degC, Pint Quantity) for dry adiabatic descent
+    """
+    try:
+        # Validate inputs
+        if p_start is None or T_start is None or pressures is None:
+            raise ValueError("p_start, T_start, or pressures is None")
+        if np.isnan(p_start.magnitude) or np.isnan(T_start.magnitude):
+            raise ValueError("p_start or T_start contains NaN values")
+        if np.any(np.isnan(pressures.magnitude)):
+            raise ValueError("pressures contains NaN values")
+
+        lapse_rate = 9.8 * units('K/km')  # Lapse rate in Kelvin per kilometer
+        z_start = mpcalc.pressure_to_height_std(p_start).to('km')  # Starting height
+        z_levels = mpcalc.pressure_to_height_std(pressures).to('km')  # Height levels
+        dz = z_levels - z_start  # Height differences in km
+        T_start_K = T_start.to('K')  # Convert starting temperature to Kelvin
+        delta_T = lapse_rate * dz  # Temperature change (in delta_K)
+        T_profile_K = T_start_K - delta_T  # Temperature profile in Kelvin
+        return T_profile_K.to('degC')  # Convert back to degrees Celsius
+    except Exception as e:
+        logger.error(f"Error in dry_adiabatic_descent: {e}")
+        return np.full(len(pressures), np.nan) * units.degC
+
 @bot.command()
 async def skewt(ctx, *args):
     """
@@ -377,9 +447,9 @@ async def skewt(ctx, *args):
 
     - **Forecast Sounding:** `$skewt <station> <model> <forecast_hour>`
       - `<station>`: Three-letter station code (see list below)
-      - `<model>`: 'gfs' (currently the only supported model)
-      - `<forecast_hour>`: Integer (0-384) representing hours ahead from the latest GFS run
-      - Example: `$skewt HOU gfs 6`
+      - `<model>`: 'gfs', 'gfsm', 'nam', 'namm', or 'rap' (supported models)
+      - `<forecast_hour>`: Integer (0-384 for GFS/GFSM, 0-84 for NAM/NAMM, 0-18 for RAP) representing hours ahead from the latest model run
+      - Example: `$skewt VQQ gfs 6`
 
     **Available Station Codes:**
     - **ASH**: Nashua, New Hampshire
@@ -387,6 +457,7 @@ async def skewt(ctx, *args):
     - **DEN**: Denver, Colorado
     - **DFW**: Dallas-Fort Worth, Texas
     - **FFC**: Atlanta, Georgia
+    - **GPT**: Gulfport-Biloxi, Mississippi
     - **HOU**: Houston, Texas
     - **IAD**: Washington, District of Columbia
     - **IND**: Indianapolis, Indiana
@@ -408,16 +479,18 @@ async def skewt(ctx, *args):
     - **STL**: St. Louis, Missouri
     - **TPA**: Tampa, Florida
     - **TVC**: Traverse City, Michigan
+    - **VQQ**: Meridian, Mississippi
 
     **Notes:**
     - Station codes are three letters without the 'K' prefix.
-    - Observed soundings use University of Wyoming data; forecast soundings use NOAA GFS data from Iowa State University.
-    - For forecast hours, 0 is the analysis time, and values increase in 3-hour increments (e.g., 3, 6, 9, up to 384).
+    - Observed soundings use University of Wyoming data; forecast soundings use NOAA model data from Iowa State University.
+    - For forecast hours, use 0-384 for GFS/GFSM, 0-84 for NAM/NAMM, 0-18 for RAP.
     """
     logger.info(f"Received skewt command with args: {args}")
 
     utc_time = datetime.datetime.now(pytz.UTC)
 
+    # **Data Preparation Section**
     try:
         if len(args) == 2:
             station_code, sounding_time = args
@@ -427,23 +500,40 @@ async def skewt(ctx, *args):
                 raise ValueError("Invalid time. Use '00Z' or '12Z'.")
             year, month, day = utc_time.year, utc_time.month, utc_time.day
             hour = 12 if sounding_time == "12Z" else 0
+            # Adjust day based on current time
             if sounding_time == "00Z" and utc_time.hour >= 12:
                 day += 1
-            now = datetime.datetime(year, month, day, hour, 0, 0, tzinfo=pytz.UTC)
-            data_type = "observed"  # Set data_type for observed soundings
-            df = await fetch_sounding_data(ctx, now, station_code, data_type)  # Pass data_type
+            elif sounding_time == "12Z" and utc_time.hour < 12:
+                day -= 1  # If it's before 12Z, use the previous day's 12Z sounding
+            # Validate the date
+            try:
+                now = datetime.datetime(year, month, day, hour, 0, 0, tzinfo=pytz.UTC)
+            except ValueError as e:
+                logger.error(f"Invalid date: year={year}, month={month}, day={day}, hour={hour}")
+                await ctx.send("Error: The specified date is invalid (e.g., day out of range for the month). Please try again.")
+                return
+            data_type = "observed"
+            df = await fetch_sounding_data(ctx, now, station_code, data_type)
             if df is None:
                 return
-            station_lat = df['latitude'][0]
-            station_lon = df['longitude'][0]
+            # Try to get lat/lon from DataFrame, fallback to STATIONS
+            try:
+                station_lat = df['latitude'][0]
+                station_lon = df['longitude'][0]
+            except (KeyError, IndexError):
+                logger.warning(f"Latitude/Longitude not found in DataFrame for {station_code}, using STATIONS dictionary.")
+                station_lat, station_lon = STATIONS.get(station_code, (np.nan, np.nan))
             title = f"{station_code} - {now.strftime('%Y-%m-%d %HZ')}"
         elif len(args) == 3:
             station_code, model, forecast_hour = args
             station_code = station_code.upper()
             model = model.lower()
             forecast_hour = int(forecast_hour)
-            if model != 'gfs':
-                raise ValueError("Only 'gfs' model is supported currently.")
+            if model not in ['gfs', 'gfsm', 'nam', 'namm', 'rap']:
+                raise ValueError("Model not supported. Use 'gfs', 'gfsm', 'nam', 'namm', or 'rap'.")
+            max_hours = {'gfs': 384, 'gfsm': 384, 'nam': 84, 'namm': 84, 'rap': 18}
+            if forecast_hour > max_hours[model]:
+                raise ValueError(f"Forecast hour exceeds maximum for {model} ({max_hours[model]} hours).")
             if station_code not in NWS_STATIONS:
                 raise ValueError(f"Station {station_code} not found in NWS station mapping.")
             df, valid_time = await fetch_bufkit_data_async(ctx, station_code, model, forecast_hour)
@@ -484,12 +574,7 @@ async def skewt(ctx, *args):
             if np.any(np.isnan(arr.magnitude)):
                 logger.warning(f"NaN values detected in {name} array")
 
-        try:
-            theta_e = mpcalc.equivalent_potential_temperature(p, T, Td)
-        except Exception as e:
-            logger.error(f"Error calculating theta_e: {e}")
-            theta_e = np.full_like(T, np.nan) * units.kelvin
-
+        theta_e = mpcalc.equivalent_potential_temperature(p, T, Td)
         lcl_pressure, lcl_temperature = mpcalc.lcl(p[0], T[0], Td[0])
 
         p_truncated = p[p >= 100 * units.hPa]
@@ -497,53 +582,39 @@ async def skewt(ctx, *args):
         Td_truncated = Td[p >= 100 * units.hPa]
 
         if data_type == "forecast":
-            try:
-                prof = mpcalc.parcel_profile(p_truncated, T[0], Td[0]).to('degC')
-            except Exception as e:
-                logger.error(f"Failed to calculate SB parcel profile for forecast: {e}")
-                prof = None
+            prof = mpcalc.parcel_profile(p_truncated, T[0], Td[0]).to('degC')
             sbcape, sbcin = mpcalc.surface_based_cape_cin(p, T, Td)
-            ml_depth = 300 * units.hPa
+            ml_depth = 100 * units.hPa
             ml_t, ml_td = mpcalc.mixed_layer(p, T, Td, depth=ml_depth)
-            try:
-                ml_prof = mpcalc.parcel_profile(p_truncated, ml_t, ml_td).to('degC')
-            except Exception as e:
-                logger.error(f"Failed to calculate ML parcel profile for forecast: {e}")
-                ml_prof = None
-            mlcape, mlcin = mpcalc.mixed_layer_cape_cin(p, T, prof if prof is not None else T, depth=ml_depth)
-            mu_p, mu_t, mu_td, _ = mpcalc.most_unstable_parcel(p, T, Td, depth=300 * units.hPa)
-            mpl_height = np.interp(mu_p.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m if mu_p is not None and not np.isnan(mu_p.magnitude) else np.nan * units.m
-            logger.info(f"MPL pressure: {mu_p}, height: {mpl_height}")
-            try:
-                mu_prof = mpcalc.parcel_profile(p_truncated, mu_t, mu_td).to('degC')
-            except Exception as e:
-                logger.error(f"Failed to calculate MU parcel profile for forecast: {e}")
-                mu_prof = None
+            ml_prof = mpcalc.parcel_profile(p_truncated, ml_t, ml_td).to('degC')
+            mlcape, mlcin = mpcalc.mixed_layer_cape_cin(p, T, Td, depth=ml_depth)
+            mu_p, mu_t, mu_td, _ = mpcalc.most_unstable_parcel(p, T, Td, depth=100 * units.hPa)
+            mpl_height = np.interp(mu_p.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m if mu_p is not None else np.nan * units.m
+            mu_prof = mpcalc.parcel_profile(p_truncated, mu_t, mu_td).to('degC')
             mucape, mucin = mpcalc.most_unstable_cape_cin(p, T, Td, depth=100 * units.hPa)
             valid_idx = np.where((p > 500 * units.hPa) & (~np.isnan(theta_e.magnitude)))[0]
             if len(valid_idx) > 0:
                 min_theta_e_idx = valid_idx[np.argmin(theta_e[valid_idx].magnitude)]
-                try:
-                    down_prof = mpcalc.parcel_profile(p_truncated, T[min_theta_e_idx], Td[min_theta_e_idx]).to('degC')
-                except Exception as e:
-                    logger.error(f"Failed to calculate downdraft parcel profile for forecast: {e}")
-                    down_prof = None
+                p_start = p[min_theta_e_idx]
+                T_start = T[min_theta_e_idx]
+                down_prof = dry_adiabatic_descent(p_start, T_start, p_truncated)
             else:
-                logger.warning("No valid theta_e values above 500 hPa for downdraft parcel")
                 down_prof = None
         else:
             prof = mpcalc.parcel_profile(p_truncated, T[0], Td[0]).to('degC')
             sbcape, sbcin = mpcalc.surface_based_cape_cin(p, T, Td)
-            ml_depth = 300 * units.hPa
+            ml_depth = 100 * units.hPa
             ml_t, ml_td = mpcalc.mixed_layer(p, T, Td, depth=ml_depth)
             ml_prof = mpcalc.parcel_profile(p_truncated, ml_t, ml_td).to('degC')
-            mlcape, mlcin = mpcalc.mixed_layer_cape_cin(p, T, prof, depth=ml_depth)
+            mlcape, mlcin = mpcalc.mixed_layer_cape_cin(p, T, Td, depth=ml_depth)
             mu_p, mu_t, mu_td, _ = mpcalc.most_unstable_parcel(p, T, Td, depth=300 * units.hPa)
-            mpl_height = np.interp(mu_p.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m if mu_p is not None and not np.isnan(mu_p.magnitude) else np.nan * units.m
+            mpl_height = np.interp(mu_p.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m if mu_p is not None else np.nan * units.m
             mu_prof = mpcalc.parcel_profile(p_truncated, mu_t, mu_td).to('degC')
             mucape, mucin = mpcalc.most_unstable_cape_cin(p, T, Td, depth=100 * units.hPa)
             min_theta_e_idx = np.argmin(theta_e[p > 500 * units.hPa])
-            down_prof = mpcalc.parcel_profile(p_truncated, T[min_theta_e_idx], Td[min_theta_e_idx]).to('degC')
+            p_start = p[min_theta_e_idx]
+            T_start = T[min_theta_e_idx]
+            down_prof = dry_adiabatic_descent(p_start, T_start, p_truncated).to('degC')
 
         wet_bulb = mpcalc.wet_bulb_temperature(p, T_kelvin, Td_kelvin)
         kindex = mpcalc.k_index(p, T_kelvin, Td_kelvin)
@@ -552,16 +623,6 @@ async def skewt(ctx, *args):
         lfc_pressure, lfc_temperature = mpcalc.lfc(p, T, Td)
         el_pressure, el_temperature = mpcalc.el(p, T, Td)
 
-    except ValueError as e:
-        logger.error(f"Value error in data prep: {e}")
-        await ctx.send(str(e))
-        return
-    except Exception as e:
-        logger.error(f"Unexpected error in data prep: {e}", exc_info=True)
-        await ctx.send("An unexpected error occurred while preparing the data. Please try again later.")
-        return
-
-    try:
         idx = np.where(T.magnitude < 0)[0]
         p_freeze = None
         if len(idx) > 0 and idx[0] > 0:
@@ -626,22 +687,33 @@ async def skewt(ctx, *args):
         fl_height = np.interp(p_freeze.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m if p_freeze is not None and not np.isnan(p_freeze.magnitude) else np.nan * units.m
         mpl_height = np.interp(mu_p.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m if mu_p is not None and not np.isnan(mu_p.magnitude) else np.nan * units.m
 
-        try:
-            sig_tor = mpcalc.significant_tornado(sbcape, lcl_height, total_helicity1, bshear6_mag).to_base_units()
-        except Exception as e:
-            logger.error(f"Error calculating sig_tor: {e}")
-            sig_tor = np.nan * units.dimensionless
+        # Ensure scalar values for storm parameters
+        if isinstance(total_helicity1.magnitude, np.ndarray):
+            total_helicity1 = total_helicity1[0] if total_helicity1.magnitude.size > 0 else np.nan * units('m**2/s**2')
+        if isinstance(total_helicity3.magnitude, np.ndarray):
+            total_helicity3 = total_helicity3[0] if total_helicity3.magnitude.size > 0 else np.nan * units('m**2/s**2')
+        if isinstance(total_helicity6.magnitude, np.ndarray):
+            total_helicity6 = total_helicity6[0] if total_helicity6.magnitude.size > 0 else np.nan * units('m**2/s**2')
+        if isinstance(bshear1_mag.magnitude, np.ndarray):
+            bshear1_mag = bshear1_mag[0] if bshear1_mag.magnitude.size > 0 else np.nan * units('m/s')
+        if isinstance(bshear3_mag.magnitude, np.ndarray):
+            bshear3_mag = bshear3_mag[0] if bshear3_mag.magnitude.size > 0 else np.nan * units('m/s')
+        if isinstance(bshear6_mag.magnitude, np.ndarray):
+            bshear6_mag = bshear6_mag[0] if bshear6_mag.magnitude.size > 0 else np.nan * units('m/s')
 
-        try:
-            super_comp = mpcalc.supercell_composite(mucape, total_helicity3, bshear3_mag).to_base_units()
-        except Exception as e:
-            logger.error(f"Error calculating super_comp: {e}")
-            super_comp = np.nan * units.dimensionless
+        sig_tor = mpcalc.significant_tornado(sbcape, lcl_height, total_helicity1, bshear6_mag).to_base_units()
+        super_comp = mpcalc.supercell_composite(mucape, total_helicity3, bshear3_mag).to_base_units()
+
+        # Ensure scalar values for sig_tor and super_comp
+        if isinstance(sig_tor.magnitude, np.ndarray):
+            sig_tor = sig_tor[0] if sig_tor.magnitude.size > 0 else np.nan * units.dimensionless
+        if isinstance(super_comp.magnitude, np.ndarray):
+            super_comp = super_comp[0] if super_comp.magnitude.size > 0 else np.nan * units.dimensionless
 
         RH = mpcalc.relative_humidity_from_dewpoint(T, Td) * 100
         e = mpcalc.saturation_vapor_pressure(Td)
         ω = mpcalc.mixing_ratio(e, p).to('g/kg')
-        z_km = z / 1000
+        z_km = z.to('km')
 
         layers = [
             (0, 0.5, '0 - 0.5 km'), (0, 1, '0 - 1 km'), (1, 3, '1 - 3 km'),
@@ -660,6 +732,45 @@ async def skewt(ctx, *args):
             else:
                 layer_data.append((label, np.nan, np.nan))
 
+        # Compute SHIP (Significant Hail Parameter)
+        p_mag = p.magnitude
+        z_mag = z.magnitude
+        T_mag = T.magnitude
+        ω_mag = ω.magnitude
+
+        # Interpolate at 700 hPa
+        if 700 >= p.min().magnitude and 700 <= p.max().magnitude:
+            z_700 = np.interp(700, p_mag[::-1], z_mag[::-1]) * z.units
+            T_700 = np.interp(700, p_mag[::-1], T_mag[::-1]) * T.units
+            ω_700 = np.interp(700, p_mag[::-1], ω_mag[::-1]) * ω.units
+        else:
+            z_700 = np.nan * z.units
+            T_700 = np.nan * T.units
+            ω_700 = np.nan * ω.units
+
+        # Interpolate at 500 hPa
+        if 500 >= p.min().magnitude and 500 <= p.max().magnitude:
+            z_500 = np.interp(500, p_mag[::-1], z_mag[::-1]) * z.units
+            T_500 = np.interp(500, p_mag[::-1], T_mag[::-1]) * T.units
+        else:
+            z_500 = np.nan * z.units
+            T_500 = np.nan * T.units
+
+        # Compute lapse rate (700-500 hPa)
+        if not np.isnan(z_500.magnitude) and not np.isnan(z_700.magnitude) and z_500 > z_700:
+            dz_km = (z_500 - z_700).to('km').magnitude
+            LR_700_500 = ((T_700 - T_500).magnitude / dz_km) * units('degC/km')
+        else:
+            LR_700_500 = np.nan * units('degC/km')
+
+        # Compute SHIP
+        if all(q is not None for q in [mucape, ω_700, T_500, LR_700_500, bshear6_mag]) and not np.isnan([q.magnitude for q in [mucape, ω_700, T_500, LR_700_500, bshear6_mag]]).any():
+            ship = (mucape.magnitude / 1000) * (ω_700.magnitude / 14) * (-T_500.magnitude / 30) * (LR_700_500.magnitude / 9) * (bshear6_mag.magnitude / 20) * units.dimensionless
+            if isinstance(ship.magnitude, np.ndarray):
+                ship = ship[0] if ship.magnitude.size > 0 else np.nan * units.dimensionless
+        else:
+            ship = np.nan * units.dimensionless
+
         PWAT = mpcalc.precipitable_water(p, Td).to('inch').magnitude
         WB_surface = wet_bulb[0].to('degC').magnitude
         idx_wb0 = np.where(wet_bulb.magnitude < 0)[0]
@@ -668,14 +779,50 @@ async def skewt(ctx, *args):
             wb1, wb2 = wet_bulb[i-1], wet_bulb[i]
             p1, p2 = p[i-1], p[i]
             z1, z2 = z[i-1], z[i]
-            p_wb0 = p1 + (0 - wb1.magnitude) * (p2 - p1) / (wb2.magnitude - wb1.magnitude)
-            wb0_height = np.interp(p_wb0.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m
+            if (wb2.magnitude - wb1.magnitude) != 0:
+                p_wb0 = p1 + (0 - wb1.magnitude) * (p2 - p1) / (wb2.magnitude - wb1.magnitude)
+                wb0_height = np.interp(p_wb0.magnitude, p.magnitude[::-1], z.magnitude[::-1]) * units.m
+            else:
+                wb0_height = np.nan * units.m
         else:
             wb0_height = np.nan * units.m
 
-        surface_RH = mpcalc.relative_humidity_from_dewpoint(T[0], Td[0]) * 100
+        surface_RH = mpcalc.relative_humidity_from_dewpoint(T[0], Td[0]) * 100 * units.percent  # Ensure units
         surface_wet_bulb = wet_bulb[0].to('degC')
 
+    except ValueError as e:
+        logger.error(f"Value error in data prep: {e}")
+        await ctx.send(str(e))
+        return
+    except Exception as e:
+        logger.error(f"Unexpected error in data prep: {e}", exc_info=True)
+        await ctx.send("An unexpected error occurred while preparing the data. Please try again later.")
+        return
+
+    # **Debugging Prints Section** (No exception handling needed)
+    if ml_prof is not None:
+        print("ML Parcel Profile (degC):", ml_prof.magnitude)
+        print("Environmental T (degC):", T.magnitude)
+        print("MLCAPE:", mlcape)
+        print("LFC Pressure:", lfc_pressure)
+        diff = ml_prof - T
+        print("Parcel - Env Temp Difference (degC):", diff.magnitude)
+        buoyant_levels = p[diff.magnitude > 0]
+        if len(buoyant_levels) > 0:
+            print(f"ML Parcel is warmer than environment at pressures: {buoyant_levels}")
+        else:
+            print("ML Parcel remains cooler than environment at all levels.")
+        if not np.isnan(lfc_pressure.magnitude):
+            lfc_temp = np.interp(lfc_pressure.magnitude, p.magnitude[::-1], ml_prof.magnitude[::-1]) * units.degC
+            env_temp = np.interp(lfc_pressure.magnitude, p.magnitude[::-1], T.magnitude[::-1]) * units.degC
+            print(f"LFC Temp (Parcel): {lfc_temp}, Env Temp: {env_temp}")
+            if lfc_temp > env_temp:
+                print(f"ML Parcel is buoyant at LFC (pressure: {lfc_pressure})")
+            else:
+                print(f"ML Parcel is not buoyant at LFC (pressure: {lfc_pressure})")
+
+    # **Plotting Section**
+    try:
         fig = plt.figure(figsize=(30, 15))
         fig.set_facecolor('lightsteelblue')
         skew = SkewT(fig, rotation=45, rect=[0.03, 0.15, 0.55, 0.8])
@@ -728,7 +875,7 @@ async def skewt(ctx, *args):
                 logger.info(f"Skipping {label}: Invalid pressure={pressure}, temperature={temperature}")
 
         plot_point(skew, lcl_pressure, lcl_temperature, 'o', 'black', 'LCL', f"LCL plotted at {lcl_pressure}, {lcl_temperature}")
-        plot_point(skew, lfc_pressure, lfc_temperature, 'o', 'black', 'LFC', f"LFC plotted at {lfc_pressure}, {lcl_temperature}")
+        plot_point(skew, lfc_pressure, lfc_temperature, 'o', 'black', 'LFC', f"LFC plotted at {lfc_pressure}, {lfc_temperature}")
         plot_point(skew, el_pressure, el_temperature, 'o', 'black', 'EL', f"EL plotted at {el_pressure}, {el_temperature}")
         plot_point(skew, p_freeze, 0 * units.degC if p_freeze is not None else None, 'o', 'blue', 'FL', f"Freezing Level plotted at {p_freeze}, 0°C")
         plot_point(skew, p_CCL, T_CCL, 'o', 'purple', 'CCL', f"CCL plotted at {p_CCL}, {T_CCL}")
@@ -789,28 +936,164 @@ async def skewt(ctx, *args):
         theta_e_ax.grid(True, color='gray', linestyle='--', linewidth=0.5)
         theta_e_ax.set_facecolor('#fafad2')
 
+        # SIG TOR Graph
+        sig_tor_ax = fig.add_axes([0.10, -0.06, w_ax, h_ax])
+        sig_tor_ax.set_facecolor('#fafad2')
+        sig_tor_ax.set_title('Significant Tornado Parameter', fontsize=10, weight='bold')
+        if not np.isnan(sig_tor.magnitude):
+            sig_tor_value = sig_tor.magnitude.item()
+            sig_tor_ax.bar(0, sig_tor_value, color='blue', width=0.5)
+            sig_tor_ax.text(0, sig_tor_value + 0.1, f'{sig_tor_value:.1f}', ha='center', va='bottom', fontsize=8)
+        else:
+            sig_tor_ax.text(0.5, 0.5, 'N/A', transform=sig_tor_ax.transAxes, fontsize=8, ha='center', va='center')
+        sig_tor_ax.axhline(1, color='red', linestyle='--', linewidth=1)
+        sig_tor_ax.set_xlim(-0.5, 0.5)
+        sig_tor_ax.set_ylim(0, 10)
+        sig_tor_ax.set_xticks([])
+        sig_tor_ax.set_ylabel('SIG TOR', fontsize=8)
+        sig_tor_ax.grid(True, axis='y', color='gray', linestyle='--', linewidth=0.5)
+
+        # Storm Relative Wind vs Height Graph
+        u_sr = u - storm_u
+        v_sr = v - storm_v
+        sr_wind_speed = np.sqrt(u_sr**2 + v_sr**2).to('knots')
+        z_km = z.to('km').magnitude
+
+        layers = [(0, 2), (4, 6), (9, 11)]
+        colors = ['red', 'blue', 'purple']
+        labels = ['Lower (0-2 km)', 'Mid (4-6 km)', 'Upper (9-11 km)']
+
+        mean_sr_wind = []
+        for lower, upper in layers:
+            mask = (z_km >= lower) & (z_km <= upper)
+            if np.any(mask):
+                mean_speed = np.mean(sr_wind_speed[mask].magnitude)
+            else:
+                mean_speed = np.nan
+            mean_sr_wind.append(mean_speed)
+
+        sr_wind_ax = fig.add_axes([0.22, -0.06, 0.08, 0.16])
+        sr_wind_ax.set_facecolor('#fafad2')
+        bar_width = 0.5
+        for i, (mean_speed, color, label) in enumerate(zip(mean_sr_wind, colors, labels)):
+            if not np.isnan(mean_speed):
+                sr_wind_ax.barh(i, mean_speed, color=color, height=bar_width, label=label)
+        sr_wind_ax.axvline(15, color='white', linestyle='--', linewidth=1, label='15 kts (Severe)')
+        sr_wind_ax.axvline(50, color='purple', linestyle='--', linewidth=1, label='50 kts (Supercell)')
+        sr_wind_ax.set_xlim(0, 70)
+        sr_wind_ax.set_ylim(-0.5, 2.5)
+        sr_wind_ax.set_yticks([0, 1, 2])
+        sr_wind_ax.set_yticklabels(['Lower', 'Mid', 'Upper'])
+        sr_wind_ax.set_xlabel('SR Wind (kts)', fontsize=8)
+        sr_wind_ax.set_title('Storm Relative Wind\nvs Height', fontsize=10, weight='bold')
+        sr_wind_ax.tick_params(axis='both', labelsize=6)
+        sr_wind_ax.grid(True, color='gray', linestyle='--', linewidth='0.5')
+        sr_wind_ax.legend(loc='upper right', fontsize=6)
+
+        # Storm Slinky Graph
         storm_slinky_ax = fig.add_axes([0.34, -0.06, w_ax, h_ax])
         u_sr = u - storm_u
         v_sr = v - storm_v
         z_km = z.to('km').magnitude
-        mask_3km = z_km <= 3
-        u_sr_3km = u_sr[mask_3km]
-        v_sr_3km = v_sr[mask_3km]
-        z_3km = z[mask_3km]
+
+        x = [0]
+        y = [0]
+        w = 10
+        for i in range(1, len(z)):
+            if z[i].to('km').magnitude > 3:
+                break
+            dz = (z[i] - z[i-1]).to('m').magnitude
+            dt = dz / w
+            dx = u_sr[i-1].magnitude * dt
+            dy = v_sr[i-1].magnitude * dt
+            x.append(x[-1] + dx)
+            y.append(y[-1] + dy)
+
+        storm_slinky_ax.plot(x, y, color='purple', linewidth=2, label='Storm Slinky')
+        storm_slinky_ax.scatter(x, y, c=z[:len(x)].to('km').magnitude, cmap='brg', s=30)
         storm_slinky_ax.grid(True, color='gray', linestyle='--', linewidth=0.5)
         storm_slinky_ax.axvline(0, color='black', linewidth=2, zorder=0)
         storm_slinky_ax.axhline(0, color='black', linewidth=2, zorder=0)
         storm_slinky_ax.set_facecolor('#fafad2')
-        norm = Normalize(vmin=0, vmax=3)
-        scatter = storm_slinky_ax.scatter(u_sr_3km.magnitude, v_sr_3km.magnitude, c=z_3km.magnitude, cmap='brg', s=30, label='Storm Slinky (0–3 km)')
-        storm_slinky_ax.set_xlabel('SR U (m/s)', fontsize=8)
-        storm_slinky_ax.set_ylabel('SR V (m/s)', fontsize=8)
-        storm_slinky_ax.set_title('Storm Slinky', fontsize=10, weight='bold')
-        storm_slinky_ax.set_xlim(-50, 50)
-        storm_slinky_ax.set_ylim(-50, 50)
+        storm_slinky_ax.set_xlabel('X Displacement (m)', fontsize=8)
+        storm_slinky_ax.set_ylabel('Y Displacement (m)', fontsize=8)
+        storm_slinky_ax.set_title('Storm Slinky\n(Trajectory starting at (0,0) at LFC)', fontsize=10, weight='bold')
+        storm_slinky_ax.set_xlim(-5000, 5000)
+        storm_slinky_ax.set_ylim(-5000, 5000)
         storm_slinky_ax.tick_params(axis='both', labelsize=6)
-        cbar = plt.colorbar(scatter, ax=storm_slinky_ax, orientation='vertical', pad=0.03, fraction=0.046)
+        norm = Normalize(vmin=0, vmax=3)
+        cbar = plt.colorbar(ScalarMappable(norm=norm, cmap='brg'), ax=storm_slinky_ax, orientation='vertical', pad=0.03, fraction=0.046)
         cbar.set_label('Height (km)', fontsize=8)
+
+        storm_speed = np.sqrt(storm_u.magnitude**2 + storm_v.magnitude**2)
+        max_line_length = 5000
+        scale_factor = min(4000 / 20, max_line_length / storm_speed) if storm_speed > 0 else 1
+        scaled_u = storm_u.magnitude * scale_factor
+        scaled_v = storm_v.magnitude * scale_factor
+        storm_slinky_ax.plot([0, scaled_u], [0, scaled_v], color='black', linewidth=2, label='Storm Motion (RM)')
+
+        if lfc_height is not None and el_height is not None and not np.isnan([lfc_height.magnitude, el_height.magnitude]).any():
+            try:
+                height_diff = (el_height - lfc_height).to('km').magnitude
+                if height_diff == 0:
+                    logger.warning("LFC and EL heights are identical, cannot calculate tilt.")
+                    angle_deg = 90.0
+                else:
+                    storm_speed = np.sqrt(storm_u.magnitude**2 + storm_v.magnitude**2)
+                    if storm_speed > 0:
+                        ascent_time = height_diff * 1000 / 10
+                        horizontal_dist = storm_speed * ascent_time
+                    else:
+                        horizontal_dist = 0
+                    angle_deg = np.arctan2(height_diff, horizontal_dist / 1000) * (180 / np.pi)
+                    angle_deg = abs(angle_deg)
+                storm_slinky_ax.text(4500, 4500, f'Updraft Tilt: {angle_deg:.1f}°', fontsize=8, color='black', ha='right', va='top')
+                logger.info(f"Updraft tilt angle calculated: {angle_deg:.1f} degrees with height_diff={height_diff} km, horizontal_dist={horizontal_dist} m")
+            except Exception as e:
+                logger.error(f"Error calculating updraft tilt angle: {e}")
+                angle_deg = 90.0
+
+        storm_slinky_ax.text(4800, -4800, f'Speed: {storm_speed:.1f} m/s', fontsize=6, color='black', ha='right', va='bottom')
+        storm_slinky_ax.legend(loc='upper left', fontsize=8, frameon=True)
+
+        def determine_storm_hazard(sbcape, total_helicity1, lcl_height, bshear6_mag, mucape, PWAT, surface_RH):
+            """
+            Determine potential storm hazard based on meteorological parameters.
+
+                Args:
+                sbcape (Quantity): Surface-based CAPE (J/kg)
+                total_helicity1 (Quantity): 0-1 km SRH (m²/s²)
+                lcl_height (Quantity): LCL height (m)
+                bshear6_mag (Quantity): 0-6 km bulk shear magnitude (m/s)
+                mucape (Quantity): Most unstable CAPE (J/kg)
+                PWAT (float): Precipitable water (inches)
+                surface_RH (Quantity): Surface relative humidity (%)
+
+            Returns:
+                str: Classified storm hazard type
+            """
+            hazard = "No Significant Hazard"
+            # Check for invalid inputs
+            if any(np.isnan(q.magnitude) for q in [sbcape, total_helicity1, lcl_height, bshear6_mag, mucape] if q is not None):
+                return hazard
+            if PWAT is None or np.isnan(PWAT) or surface_RH is None or np.isnan(surface_RH.magnitude):
+                return hazard
+
+            # Simplified thresholds inspired by SPC/SHARPpy guidelines
+            if (sbcape.magnitude > 1000 and total_helicity1.magnitude > 150 and
+                lcl_height.magnitude < 1000 and bshear6_mag.magnitude > 30):
+                hazard = "Tornado Potential"
+            elif (mucape.magnitude > 1500 and bshear6_mag.magnitude > 30 and PWAT > 1.5):
+                hazard = "Hail Potential"
+            elif (sbcape.magnitude > 1500 and bshear6_mag.magnitude > 25 and surface_RH.magnitude < 60):
+                hazard = "Strong Wind Potential"
+            return hazard
+
+        # Call the hazard function with calculated values
+        storm_hazard = determine_storm_hazard(
+            sbcape, total_helicity1, lcl_height, bshear6_mag, mucape, PWAT, surface_RH
+        )
+        logger.info(f"Determined storm hazard: {storm_hazard}")
 
         bbox_props = dict(facecolor='#fafad2', alpha=0.7, edgecolor='none', pad=3)
         indices = [
@@ -825,13 +1108,14 @@ async def skewt(ctx, *args):
             ('SUPERCELL COMP', super_comp, 'red', -0.01, 0.88),
             ('CCL', ccl_height, 'purple', -0.03, 0.88),
             ('LCL', lcl_height, 'black', -0.03, None), ('LFC', lfc_height, 'black', -0.05, None),
-            ('EL', el_height, 'black', -0.07, None), ('MPL', mpl_height, 'black', -0.09, None),
+            ('EL', el_height, 'black', -0.07, None), ('MU Parcel Level', mpl_height, 'black', -0.09, None),
             ('FL', fl_height, 'blue', -0.11, None),
             ('Surface RH', surface_RH, 'green', -0.13, 0.88),
             ('Surface Wet Bulb', surface_wet_bulb, 'blue', -0.15, 0.88),
             ('PWAT', PWAT * units.inch, 'green', -0.17, 0.88),
             ('Convective Temp', Tc, 'purple', -0.19, 0.88),
             ('Max Temp', max_T, 'red', -0.21, 0.88),
+            ('SHIP', ship, 'red', -0.23, 0.88),
         ]
 
         left_indices = [idx for idx in indices if idx[4] is None]
@@ -842,6 +1126,8 @@ async def skewt(ctx, *args):
         y_positions = [y_start - i * y_step for i in range(max_rows)]
 
         def format_value(label, value):
+            if label == 'SHIP':
+                return f'{value.magnitude:.1f}' if not np.isnan(value.magnitude) else 'N/A'
             if label == 'Surface RH':
                 if isinstance(value, pint.Quantity):
                     magnitude = value.magnitude
@@ -881,23 +1167,39 @@ async def skewt(ctx, *args):
             plt.figtext(x_left, y, f'{label}: ', weight='bold', fontsize=12, color='black', ha='left', bbox=bbox_props)
             plt.figtext(x_right, y, value_str, weight='bold', fontsize=12, color=color, ha='right', bbox=bbox_props)
 
-        plt.figtext(0.71, 0.23, f"Plot Created With MetPy (C) Evan J Lane 2024\nData Source: {'University of Wyoming' if data_type == 'observed' else 'NOAA (GFS)'}\nImage Created: " +
+        # Add storm hazard text (removed duplicate entry)
+        storm_hazard = determine_storm_hazard(
+            sbcape, total_helicity1, lcl_height, bshear6_mag, mucape, PWAT, surface_RH
+        )
+        storm_hazard_text = f"Storm Hazard: {storm_hazard}"
+
+        plt.figtext(
+            0.54, 0.05,  # Position: under Temp. Adv. colorbar, aligned with bottom of smaller plots, right of Theta-e/Pressure
+            storm_hazard_text,
+            ha='left', va='top',  # Align left edge with Theta-e/Pressure's right, top at y=0.05
+            fontsize=12, fontweight='bold', color='red',
+            bbox=dict(facecolor='#fafad2', alpha=0.7, edgecolor='none', pad=3)
+        )
+
+        plt.figtext(0.71, 0.23, f"Plot Created With MetPy (C) Evan J Lane 2024\nData Source: {'University of Wyoming' if data_type == 'observed' else f'NOAA ({model.upper()})'}\nImage Created: " +
                     utc_time.strftime('%H:%M UTC'), fontsize=16, fontweight='bold', bbox=bbox_props)
         add_metpy_logo(fig, 85, 85, size='small')
-        logo_paths = {
-            'boxlogo': '/home/evanl/Documents/bot/boxlogo2.png',
-            'bulldogs': '/home/evanl/Documents/bot/Georgia_Bulldogs_logo.png'
+        '''logo_paths = {
+            'boxlogo': '/media/evanl/BACKUP/bot/boxlogo2.png',
+            'bulldogs': '/media/evanl/BACKUP/bot/metoc.png'
         }
         for name, path, pos, zoom in [('boxlogo', logo_paths['boxlogo'], (1.10, 1.20), 0.2),
                                       ('bulldogs', logo_paths['bulldogs'], (0.45, 1.20), 0.97)]:
             try:
-                logo_img = plt.imread(path)
-                imagebox = OffsetImage(logo_img, zoom=zoom)
-                ab = AnnotationBbox(imagebox, pos, xycoords='axes fraction', frameon=False, box_alignment=(1, 0))
-                ax_hodo.add_artist(ab)
-            except FileNotFoundError:
-                logger.error(f"Logo file not found: {path}")
-                await ctx.send(f"Warning: Logo '{name}' not found at {path}")
+                if os.path.exists(path):
+                    logo_img = plt.imread(path)
+                    imagebox = OffsetImage(logo_img, zoom=zoom)
+                    ab = AnnotationBbox(imagebox, pos, xycoords='axes fraction', frameon=False, box_alignment=(1, 0))
+                    ax_hodo.add_artist(ab)
+                else:
+                    logger.warning(f"Logo file does not exist: {path}")
+            except Exception as e:
+                logger.error(f"Error loading logo '{name}': {e}")'''
 
         skew.ax.legend(loc='upper left', fontsize=14, frameon=True, title='Skew-T Legend', title_fontsize=10)
         h.ax.legend(loc='upper left', fontsize=14, frameon=True, title='Hodograph Legend', title_fontsize=10)
