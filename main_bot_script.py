@@ -52,7 +52,7 @@ from matplotlib.ticker import MultipleLocator
 import matplotlib.colors as mcolors
 from matplotlib.collections import LineCollection
 from metpy.calc import dewpoint_from_relative_humidity
-from weather_maps import wind300, wind500, vort500, rh700, wind850, mAdv850, tAdv850, dew850, surfaceTemp
+from weather_maps import wind300, wind500, vort500, rh700, wind850, mAdv850, tAdv850, dew850, mslp_temp, divcon300
 # Ensure these are correctly imported if they are separate files in the same directory
 try:
     from utils import parse_date # Assuming utils.py is in the same directory
@@ -92,15 +92,13 @@ from uuid import uuid4
 from matplotlib import cm
 from matplotlib.colors import Normalize, BoundaryNorm
 import cartopy.io.shapereader as shpreader
-# Ensure these are correctly imported if they are separate files in the same directory
-try:
-    from wrd_wx import wrd_wx # Assuming wrd_wx.py is in the same directory
-    '''from eu_weather_maps import eu_wind300, eu_vort500, eu_rh700, eu_wind850, eu_surfaceTemp, eu_mAdv850, eu_tAdv850 # Assuming eu_weather_maps.py is in the same directory
-    from au_weather_maps import au_wind300, au_vort500, au_rh700, au_wind850, au_mAdv850, au_tAdv850, au_surfaceTemp # Assuming au_weather_maps.py is in the same directory'''
-    from hurricane import hurricane # Assuming hurricane.py is in the same directory
-    from georgia_temp import georgia_temp # Assuming georgia_temp.py is in the same directory
-except ImportError as e:
-    logging.error(f"Failed to import regional weather map modules: {e}. Ensure these files are correctly placed.")
+
+from wrd_wx import wrd_wx # Assuming wrd_wx.py is in the same directory
+from eu_weather_maps import eu_wind300, eu_vort500, eu_rh700, eu_wind850, eu_mslp_temp, eu_mAdv850, eu_tAdv850, eu_divcon300, eu_dew850, eu_wind500 # Assuming eu_weather_maps.py is in the same directory
+#from au_weather_maps import au_wind300, au_vort500, au_rh700, au_wind850, au_mAdv850, au_tAdv850, au_surfaceTemp # Assuming au_weather_maps.py is in the same directory
+from hurricane import hurricane # Assuming hurricane.py is in the same directory
+from georgia_temp import georgia_temp # Assuming georgia_temp.py is in the same directory
+
 
 
 
@@ -138,13 +136,16 @@ async def on_ready():
 bot.add_command(hurricane)
 bot.add_command(georgia_temp)
 bot.add_command(wrd_wx)
-#bot.add_command(eu_wind300)
-#bot.add_command(eu_vort500)
-#bot.add_command(eu_rh700)
-#bot.add_command(eu_wind850)
-#bot.add_command(eu_tAdv850)
-#bot.add_command(eu_mAdv850)
-#bot.add_command(eu_surfaceTemp)
+bot.add_command(eu_wind300)
+bot.add_command(eu_vort500)
+bot.add_command(eu_rh700)
+bot.add_command(eu_wind850)
+bot.add_command(eu_tAdv850)
+bot.add_command(eu_mAdv850)
+bot.add_command(eu_mslp_temp)
+bot.add_command(eu_divcon300)
+bot.add_command(eu_dew850)
+bot.add_command(eu_wind500)
 #bot.add_command(au_wind300)
 #bot.add_command(au_vort500)
 #bot.add_command(au_rh700)
@@ -162,8 +163,8 @@ bot.add_command(wind850)
 bot.add_command(mAdv850)
 bot.add_command(tAdv850)
 bot.add_command(dew850)
-bot.add_command(surfaceTemp)
-
+bot.add_command(mslp_temp)
+bot.add_command(divcon300)
 # --- on_message Event Handler ---
 @bot.event
 async def on_message(message):
