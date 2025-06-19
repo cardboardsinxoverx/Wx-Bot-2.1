@@ -31,13 +31,12 @@ def add_thermoisotherms_500hpa(ax, lon_2d, lat_2d, temperature):
     )
     ax.clabel(thermoisotherms, fontsize=8, inline=1, fmt='%d째C')
 
-# Helper function to fetch GFS data for a specific level
 def get_gfs_data_for_level(level):
     now = datetime.utcnow()
     run_hours = [0, 6, 12, 18]
     run_time = max([hour for hour in run_hours if hour <= now.hour])
     run_date = now.replace(hour=run_time, minute=0, second=0, microsecond=0)
-    if run_time > now.hour:
+    if run_time > now.hour:  # Adjust if run_time is in the next day
         run_date -= timedelta(days=1)
 
     catalog_url = 'https://thredds.ucar.edu/thredds/catalog/grib/NCEP/GFS/Global_0p25deg/catalog.xml'
@@ -45,21 +44,29 @@ def get_gfs_data_for_level(level):
     latest_dataset = list(cat.datasets.values())[0]
     ncss = latest_dataset.subset()
 
-    query = ncss.query()
-    query.accept('netcdf4')
-    query.time(run_date)
-    query.variables('Geopotential_height_isobaric',
-                    'u-component_of_wind_isobaric',
-                    'v-component_of_wind_isobaric',
-                    'Relative_humidity_isobaric',
-                    'Temperature_surface'),
-    query.vertical_level([level])
-    query.lonlat_box(north=-10, south=-50, east=180, west=110)
+    # Try up to 4 previous runs (current, -6h, -12h, -18h)
+    for attempt in range(4):
+        try:
+            query = ncss.query()
+            query.accept('netcdf4')
+            query.time(run_date)
+            query.variables('Geopotential_height_isobaric',
+                            'u-component_of_wind_isobaric',
+                            'v-component_of_wind_isobaric',
+                            'Relative_humidity_isobaric',
+                            'Temperature_surface')
+            query.vertical_level([level])
+            query.lonlat_box(north=-10, south=-50, east=180, west=110)
 
-    data = ncss.get_data(query)
-    ds = xr.open_dataset(xr.backends.NetCDF4DataStore(data))
-    ds = ds.metpy.parse_cf()
-    return ds, run_date
+            data = ncss.get_data(query)
+            ds = xr.open_dataset(xr.backends.NetCDF4DataStore(data))
+            ds = ds.metpy.parse_cf()
+            print(f"Successfully fetched data for {run_date}")
+            return ds, run_date
+        except Exception as e:
+            print(f"Failed to fetch data for {run_date}: {e}")
+            run_date -= timedelta(hours=6)  # Try the previous run
+    raise Exception("Failed to fetch data after multiple attempts")
 
 def generate_surface_temp_map():
     try:
