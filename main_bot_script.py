@@ -95,7 +95,7 @@ import cartopy.io.shapereader as shpreader
 
 from wrd_wx import wrd_wx # Assuming wrd_wx.py is in the same directory
 from eu_weather_maps import eu_wind300, eu_vort500, eu_rh700, eu_wind850, eu_mslp_temp, eu_mAdv850, eu_tAdv850, eu_divcon300, eu_dew850, eu_wind500 # Assuming eu_weather_maps.py is in the same directory
-#from au_weather_maps import au_wind300, au_vort500, au_rh700, au_wind850, au_mAdv850, au_tAdv850, au_surfaceTemp # Assuming au_weather_maps.py is in the same directory
+from au_weather_maps import au_wind300, au_vort500, au_rh700, au_wind850, au_mAdv850, au_tAdv850, au_mslp_temp, au_divcon300, au_dew850, au_wind500 # Assuming au_weather_maps.py is in the same directory
 from hurricane import hurricane # Assuming hurricane.py is in the same directory
 from georgia_temp import georgia_temp # Assuming georgia_temp.py is in the same directory
 
@@ -146,13 +146,16 @@ bot.add_command(eu_mslp_temp)
 bot.add_command(eu_divcon300)
 bot.add_command(eu_dew850)
 bot.add_command(eu_wind500)
-#bot.add_command(au_wind300)
-#bot.add_command(au_vort500)
-#bot.add_command(au_rh700)
-#bot.add_command(au_wind850)
-#bot.add_command(au_mAdv850)
-#bot.add_command (au_tAdv850)
-#bot.add_command(au_surfaceTemp)
+bot.add_command(au_wind300)
+bot.add_command(au_vort500)
+bot.add_command(au_rh700)
+bot.add_command(au_wind850)
+bot.add_command(au_mAdv850)
+bot.add_command(au_tAdv850)
+bot.add_command(au_mslp_temp)
+bot.add_command(au_divcon300)
+bot.add_command(au_dew850)
+bot.add_command(au_wind500)
 
 # Register commands
 bot.add_command(wind300)
