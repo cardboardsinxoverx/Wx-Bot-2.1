@@ -270,7 +270,7 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
         return None
 
 def generate_mslp_temp_map():
-    """Generate a Mean Sea Level Pressure (MSLP) chart with a temperature gradient overlay."""
+    """Generate a Mean Sea Level Pressure (MSLP) chart with temperature gradient and meteorological features using MSLET."""
     try:
         ds, run_date = get_gfs_surface_data()
         if ds is None:
@@ -285,49 +285,116 @@ def generate_mslp_temp_map():
         lat = lat.values
         lon_2d, lat_2d = np.meshgrid(lon, lat)
 
-        temp_surface = ds['Temperature_surface'].isel(time=0).squeeze().metpy.convert_units('degC').metpy.dequantify()
+        # Debug: Log available height levels
+        logging.debug(f"Available height levels: {ds['height_above_ground2'].values}")
+
+        # Select temperature data using reftime and validtime3
+        temp_surface = ds['Temperature_surface'].isel(reftime=0, validtime3=0).metpy.convert_units('degC').metpy.dequantify()
         if temp_surface.ndim != 2:
             raise ValueError(f"Temperature data is not 2D, has shape {temp_surface.shape}")
 
-        mslp = ds['Pressure_surface'].isel(time=0).squeeze().metpy.dequantify() / 100
-        if mslp.ndim != 2:
-            raise ValueError(f"MSLP data is not 2D, has shape {mslp.shape}")
+        # Select surface pressure data using reftime and validtime3 (in Pa)
+        surface_pressure = ds['Pressure_surface'].isel(reftime=0, validtime3=0).metpy.dequantify()
+        if surface_pressure.ndim != 2:
+            raise ValueError(f"Surface pressure data is not 2D, has shape {surface_pressure.shape}")
 
-        mslp = np.where((mslp >= 900) & (mslp <= 1100), mslp, np.nan)
+        # Get elevation
+        try:
+            elevation = ds['Geopotential_height_surface'].isel(reftime=0, validtime3=0).metpy.dequantify()
+            if elevation.ndim != 2:
+                raise ValueError(f"Elevation data is not 2D, has shape {elevation.shape}")
+        except KeyError as e:
+            logging.error(f"Elevation data not found: {e}")
+            raise ValueError("Elevation data is required for MSLP calculation.")
+
+        # Calculate MSLP manually using the hypsometric equation
+        try:
+            # Constants
+            g = 9.80665  # m/s^2
+            Rd = 287.05  # J/(kg·K)
+            
+            # Convert temperature to Kelvin
+            temp_kelvin = temp_surface + 273.15  # Assuming surface temp as MSLET proxy
+            
+            # Hypsometric equation: P_mslp = P_surface * exp(g * h / (Rd * T))
+            mslp = surface_pressure * np.exp((g * elevation) / (Rd * temp_kelvin))
+            
+            # Convert to hPa
+            mslp = mslp / 100
+        except Exception as e:
+            logging.error(f"Error calculating MSLP: {e}")
+            raise ValueError("Failed to calculate MSLP.")
+
+        # Validate and smooth MSLP
+        mslp = np.where((mslp >= 750) & (mslp <= 1100), mslp, np.nan)
+        mslp_smooth = ndimage.gaussian_filter(mslp, sigma=3, order=0)
+
+        # Select wind components at 10 meters height
+        u_wind_da = ds['u-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime3=0).squeeze()
+        v_wind_da = ds['v-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime3=0).squeeze()
+
+        # Debug: Log selected height and shapes
+        selected_height = ds['height_above_ground2'].sel(height_above_ground2=10, method='nearest').values
+        logging.debug(f"Selected height for wind: {selected_height}")
+        logging.debug(f"u_wind shape: {u_wind_da.shape}")
+        logging.debug(f"v_wind shape: {v_wind_da.shape}")
+
+        u_wind = u_wind_da.values
+        v_wind = v_wind_da.values
+
+        # Compute temperature gradients for front detection
+        temp_grad_x, temp_grad_y = np.gradient(temp_surface, lon[1] - lon[0], lat[1] - lat[0])
+        temp_grad_mag = np.sqrt(temp_grad_x**2 + temp_grad_y**2)
+
+        # Frontogenesis (simplified as temperature gradient convergence)
+        frontogenesis = compute_advection(temp_grad_mag, u_wind, v_wind, lat, lon)
+
+        # Identify pressure centers
+        mslp_grad_x, mslp_grad_y = np.gradient(mslp_smooth, lon[1] - lon[0], lat[1] - lat[0])
+        mslp_lap = np.gradient(mslp_grad_x, axis=1) + np.gradient(mslp_grad_y, axis=0)
+
+        # Compute curvature for troughs and ridges
+        curvature = mslp_grad_x * np.gradient(mslp_grad_y, axis=0) - mslp_grad_y * np.gradient(mslp_grad_x, axis=1)
 
         crs = ccrs.PlateCarree()
         fig, ax = plt.subplots(figsize=(20, 12), subplot_kw={'projection': crs})
         fig.patch.set_facecolor('lightsteelblue')
 
-        ax.add_feature(cfeature.COASTLINE.with_scale('50m'), linewidth=1.5)
-        ax.add_feature(cfeature.BORDERS.with_scale('50m'), linestyle=':', linewidths=2.5, edgecolor='#750b7a')
-        ax.add_feature(cfeature.STATES.with_scale('50m'), linestyle=':', linewidths=2, edgecolor='#750b7a')
-        ax.add_feature(cfeature.LAKES.with_scale('50m'), alpha=0.5)
-        ax.add_feature(cfeature.OCEAN, alpha=0.5)
-        gl = ax.gridlines(draw_labels=True, dms=True, x_inline=False, y_inline=False)
-        gl.top_labels = False
-        gl.right_labels = False
-        gl.xformatter = LongitudeFormatter()
-        gl.yformatter = LatitudeFormatter()
-        gl.xlabel_style = {'size': 14}
-        gl.ylabel_style = {'size': 14}
+        plot_background(ax)
 
+        # Temperature gradient fill
         cf = ax.contourf(
             lon_2d, lat_2d, temp_surface,
             levels=np.linspace(np.nanmin(temp_surface), np.nanmax(temp_surface), 41),
             cmap='jet', transform=crs
         )
 
-        mslp_min = np.floor(np.nanmin(mslp) / 4) * 4
-        mslp_max = np.ceil(np.nanmax(mslp) / 4) * 4
-        isobar_levels = np.arange(mslp_min, mslp_max + 4, 4)
-        c = ax.contour(lon_2d, lat_2d, mslp, levels=isobar_levels, colors='black', linewidths=.125, transform=crs)
+        # MSLP contours with 2 hPa intervals
+        mslp_min = np.floor(np.nanmin(mslp) / 2) * 2
+        mslp_max = np.ceil(np.nanmax(mslp) / 2) * 2
+        isobar_levels = np.arange(mslp_min, mslp_max + 2, 2)
+        c = ax.contour(lon_2d, lat_2d, mslp_smooth, levels=isobar_levels, colors='black', linewidths=0.5, transform=crs)
         ax.clabel(c, fmt='%d hPa', inline=True, fontsize=5)
 
-        ax.set_title('Mean Sea Level Pressure (MSLP) with Temperature Gradient (°C)', fontsize=20)
+        # Convert wind components to knots for barbs (m/s to knots: * 1.94384)
+        u_wind_knots = u_wind * 1.94384
+        v_wind_knots = v_wind * 1.94384
+        ax.barbs(
+            lon_2d[::5, ::5], lat_2d[::5, ::5],
+            u_wind_knots[::5, ::5], v_wind_knots[::5, ::5],
+            transform=crs, length=6, color='black'
+        )
+
+        # Dry lines (simplified using temperature gradient as proxy)
+        dry_line_mask = (temp_grad_mag > np.percentile(temp_grad_mag, 90)) & (frontogenesis > -0.005) & (frontogenesis < 0.005)
+        ax.contour(lon_2d, lat_2d, dry_line_mask, levels=[0.5], colors='brown', linestyles='--', linewidths=2, transform=crs)
+
+        # Titles and labels
+        main_title = f"CONUS: MSLP with Temperature Gradient (°C) and Features"
+        ax.set_title(main_title, fontsize=16)
+        fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=12, y=1.02)
         cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03)
         cb.set_label('Temperature (°C)', size='large')
-        fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=16, y=1.02)
 
         logo_paths = ["/media/evanl/BACKUP/bot/metoc.png", "/media/evanl/BACKUP/bot/boxlogo2.png"]
         add_logos_to_figure(fig, logo_paths, logo_size=1.0, logo_pad=0.2)
