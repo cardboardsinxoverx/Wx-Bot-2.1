@@ -13,6 +13,8 @@ import io
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import logging
+from metpy.units import units
+import metpy.calc as mpcalc
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
@@ -127,7 +129,7 @@ def get_gfs_data_for_level(level):
                     'Relative_humidity_isobaric',
                     'Temperature_isobaric')
     query.vertical_level([level])
-    query.lonlat_box(north=50, south=25, east=-65, west=-125)  # North America
+    query.lonlat_box(north=50, south=25, east=-65, west=-125)  # CONUS
 
     try:
         data = ncss.get_data(query)
@@ -140,7 +142,7 @@ def get_gfs_data_for_level(level):
         return None, None
 
 def get_gfs_surface_data():
-    """Fetches GFS surface data including temperature, pressure, and 10m wind components."""
+    """Fetches GFS surface data including temperature, surface pressure, elevation, and 10m wind components."""
     now = datetime.utcnow()
     run_hours = [0, 6, 12, 18]
     hours_since_midnight = now.hour + now.minute / 60
@@ -161,8 +163,13 @@ def get_gfs_surface_data():
     query = ncss.query()
     query.accept('netcdf4')
     query.time(run_date)
-    query.variables('Temperature_surface', 'Pressure_surface',
-                    'u-component_of_wind_height_above_ground', 'v-component_of_wind_height_above_ground')
+    query.variables(
+        'Temperature_surface',
+        'Pressure_surface',  # Surface pressure for MSLP calculation
+        'Geopotential_height_surface',  # Elevation for MSLP calculation
+        'u-component_of_wind_height_above_ground',
+        'v-component_of_wind_height_above_ground'
+    )
     query.lonlat_box(north=50, south=25, east=-65, west=-125)  # North America
 
     try:
@@ -243,7 +250,10 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
         c = ax.contour(lon_2d, lat_2d, heights_smooth, colors='black', linewidths=2, transform=crs)
         ax.clabel(c, fontsize=8, inline=1, fmt='%i')
 
-        ax.barbs(lon_2d[::5, ::5], lat_2d[::5, ::5], u_wind[::5, ::5], v_wind[::5, ::5], transform=crs, length=6)
+        # Convert wind components to knots for barbs (m/s to knots: * 1.94384)
+        u_wind_knots = u_wind * 1.94384
+        v_wind_knots = v_wind * 1.94384
+        ax.barbs(lon_2d[::5, ::5], lat_2d[::5, ::5], u_wind_knots[::5, ::5], v_wind_knots[::5, ::5], transform=crs, length=6)
 
         ax.set_title(f"{title} {run_date.strftime('%d %B %Y %H:%MZ')}", fontsize=16)
         cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03)
@@ -289,19 +299,19 @@ def generate_mslp_temp_map():
         # Debug: Log available height levels
         logging.debug(f"Available height levels: {ds['height_above_ground2'].values}")
 
-        # Select temperature data using reftime and validtime3
-        temp_surface = ds['Temperature_surface'].isel(reftime=0, validtime3=0).metpy.convert_units('degC').metpy.dequantify()
+        # Select temperature data using reftime and validtime2
+        temp_surface = ds['Temperature_surface'].isel(reftime=0, validtime2=0).metpy.convert_units('degC').metpy.dequantify()
         if temp_surface.ndim != 2:
             raise ValueError(f"Temperature data is not 2D, has shape {temp_surface.shape}")
 
-        # Select surface pressure data using reftime and validtime3 (in Pa)
-        surface_pressure = ds['Pressure_surface'].isel(reftime=0, validtime3=0).metpy.dequantify()
+        # Select surface pressure data using reftime and validtime2 (in Pa)
+        surface_pressure = ds['Pressure_surface'].isel(reftime=0, validtime2=0).metpy.dequantify()
         if surface_pressure.ndim != 2:
             raise ValueError(f"Surface pressure data is not 2D, has shape {surface_pressure.shape}")
 
         # Get elevation
         try:
-            elevation = ds['Geopotential_height_surface'].isel(reftime=0, validtime3=0).metpy.dequantify()
+            elevation = ds['Geopotential_height_surface'].isel(reftime=0, validtime2=0).metpy.dequantify()
             if elevation.ndim != 2:
                 raise ValueError(f"Elevation data is not 2D, has shape {elevation.shape}")
         except KeyError as e:
@@ -313,13 +323,13 @@ def generate_mslp_temp_map():
             # Constants
             g = 9.80665  # m/s^2
             Rd = 287.05  # J/(kg·K)
-            
+
             # Convert temperature to Kelvin
             temp_kelvin = temp_surface + 273.15  # Assuming surface temp as MSLET proxy
-            
+
             # Hypsometric equation: P_mslp = P_surface * exp(g * h / (Rd * T))
             mslp = surface_pressure * np.exp((g * elevation) / (Rd * temp_kelvin))
-            
+
             # Convert to hPa
             mslp = mslp / 100
         except Exception as e:
@@ -331,8 +341,8 @@ def generate_mslp_temp_map():
         mslp_smooth = ndimage.gaussian_filter(mslp, sigma=3, order=0)
 
         # Select wind components at 10 meters height
-        u_wind_da = ds['u-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime3=0).squeeze()
-        v_wind_da = ds['v-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime3=0).squeeze()
+        u_wind_da = ds['u-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime2=0).squeeze()
+        v_wind_da = ds['v-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime2=0).squeeze()
 
         # Debug: Log selected height and shapes
         selected_height = ds['height_above_ground2'].sel(height_above_ground2=10, method='nearest').values
@@ -374,7 +384,7 @@ def generate_mslp_temp_map():
         mslp_min = np.floor(np.nanmin(mslp) / 2) * 2
         mslp_max = np.ceil(np.nanmax(mslp) / 2) * 2
         isobar_levels = np.arange(mslp_min, mslp_max + 2, 2)
-        c = ax.contour(lon_2d, lat_2d, mslp_smooth, levels=isobar_levels, colors='black', linewidths=0.5, transform=crs)
+        c = ax.contour(lon_2d, lat_2d, mslp_smooth, levels=isobar_levels, colors='black', linewidths=2, transform=crs)
         ax.clabel(c, fmt='%d hPa', inline=True, fontsize=5)
 
         # Convert wind components to knots for barbs (m/s to knots: * 1.94384)
@@ -388,10 +398,10 @@ def generate_mslp_temp_map():
 
         # Dry lines (simplified using temperature gradient as proxy)
         dry_line_mask = (temp_grad_mag > np.percentile(temp_grad_mag, 90)) & (frontogenesis > -0.005) & (frontogenesis < 0.005)
-        ax.contour(lon_2d, lat_2d, dry_line_mask, levels=[0.5], colors='brown', linestyles='--', linewidths=2, transform=crs)
+        ax.contour(lon_2d, lat_2d, dry_line_mask, levels=[0.5], colors='brown', linestyles='-.', linewidths=1, transform=crs)
 
         # Titles and labels
-        main_title = f"CONUS: MSLP with Temperature Gradient (°C) and Features"
+        main_title = f"European: MSLP with Temperature Gradient (°C) and Features"
         ax.set_title(main_title, fontsize=16)
         fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=12, y=1.02)
         cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03)
