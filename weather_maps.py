@@ -25,6 +25,7 @@ bot = commands.Bot(command_prefix='$', intents=intents)
 # Constants
 EARTH_RADIUS = 6371000  # meters
 OMEGA = 7.292e-5  # Earth's angular velocity (rad/s)
+REGION = "CONUS"  # Define the region
 
 # Helper Functions
 def compute_wind_speed(u, v):
