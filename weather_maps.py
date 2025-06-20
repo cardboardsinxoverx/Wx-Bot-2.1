@@ -329,7 +329,7 @@ def generate_mslp_temp_map():
         cb.set_label('Temperature (°C)', size='large')
         fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=16, y=1.02)
 
-        logo_paths = ["/home/evanl/Documents/uga_logo.png", "/home/evanl/Documents/boxlogo2.png"]
+        logo_paths = ["/media/evanl/BACKUP/bot/metoc.png", "/media/evanl/BACKUP/bot/boxlogo2.png"]
         add_logos_to_figure(fig, logo_paths, logo_size=1.0, logo_pad=0.2)
 
         plt.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.05)
