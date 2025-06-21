@@ -15,6 +15,8 @@ from cartopy.mpl.ticker import LongitudeFormatter, LatitudeFormatter
 import logging
 from metpy.units import units
 import metpy.calc as mpcalc
+import xarray as xr
+
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s %(message)s')
@@ -28,6 +30,11 @@ bot = commands.Bot(command_prefix='$', intents=intents)
 EARTH_RADIUS = 6371000  # meters
 OMEGA = 7.292e-5  # Earth's angular velocity (rad/s)
 REGION = "European"  # Define the region
+
+ds = xr.open_dataset('/media/evanl/BACKUP/bot/gfs_data.nc')
+print(ds.dims)  # See available dimensions
+print(ds.variables)  # See available variables
+print(ds['Pressure_surface'].dims)  # Check dimensions of a key variable
 
 # Helper Functions
 def compute_wind_speed(u, v):
@@ -101,6 +108,38 @@ def compute_divergence(u, v, lat, lon):
     divergence = u_x + v_y
     return divergence
 
+def get_time_dimension(ds, run_date):
+    """Dynamically select the appropriate time dimension and index from the dataset."""
+    try:
+        run_hour = run_date.hour
+        time_dim_map = {
+            0: ['reftime', 'time', 'validtime'],
+            6: ['reftime1', 'validtime1', 'reftime', 'time'],
+            12: ['reftime2', 'validtime2', 'reftime', 'time'],
+            18: ['reftime3', 'validtime3', 'reftime', 'time']
+        }
+        possible_dims = time_dim_map.get(run_hour, ['reftime', 'time', 'validtime'])
+
+        selected_dims = {}
+        for dim in possible_dims:
+            if dim in ds.dims:
+                logging.debug(f"Found time dimension: {dim}")
+                selected_dims[dim] = 0  # Use index 0 for latest run
+                break
+        else:
+            logging.error(f"No time dimension found. Available dimensions: {ds.dims}")
+            raise ValueError("No valid time dimension found in dataset")
+
+        if 'time' in ds.dims and 'time' not in selected_dims:
+            selected_dims['time'] = 0
+            logging.debug(f"Added time dimension: time")
+
+        logging.debug(f"Selected time dimensions: {selected_dims}")
+        return selected_dims
+    except Exception as e:
+        logging.error(f"Error in get_time_dimension: {e}")
+        raise
+
 def get_gfs_data_for_level(level):
     """Fetches GFS data for a specific isobaric level."""
     now = datetime.utcnow()
@@ -141,6 +180,73 @@ def get_gfs_data_for_level(level):
         logging.error(f"Error fetching data for level {level}: {e}")
         return None, None
 
+def download_latest_gfs_data():
+    """Downloads the latest GFS surface dataset from THREDDS for Europe and saves it as gfs_data_eu.nc."""
+    now = datetime.utcnow()
+    run_hours = [0, 6, 12, 18]
+    hours_since_midnight = now.hour + now.minute / 60
+    for run_hour in sorted(run_hours, reverse=True):
+        if hours_since_midnight >= run_hour + 6:
+            run_date = now.replace(hour=run_hour, minute=0, second=0, microsecond=0)
+            break
+    else:
+        run_date = (now - timedelta(days=1)).replace(hour=run_hours[-1], minute=0, second=0, microsecond=0)
+
+    logging.debug(f"Selected GFS run time for download: {run_date}")
+
+    catalog_url = 'https://thredds.ucar.edu/thredds/catalog/grib/NCEP/GFS/Global_0p25deg/catalog.xml'
+    output_path = '/media/evanl/BACKUP/bot/gfs_data_eu.nc'
+    max_retries = 3
+    retry_delay = 5  # seconds
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            cat = TDSCatalog(catalog_url)
+            latest_dataset = list(cat.datasets.values())[0]
+            ncss = latest_dataset.subset()
+
+            query = ncss.query()
+            query.accept('netcdf4')
+            query.time(run_date)
+            query.variables(
+                'Temperature_surface',
+                'Pressure_surface',
+                'Geopotential_height_surface',
+                'u-component_of_wind_height_above_ground',
+                'v-component_of_wind_height_above_ground'
+            )
+            query.lonlat_box(north=71, south=35, east=45, west=-25)  # Europe
+
+            logging.info(f"Attempt {attempt}: Downloading GFS data for {run_date} to {output_path}")
+            data = ncss.get_data(query)
+            ds = xr.open_dataset(xr.backends.NetCDF4DataStore(data))
+
+            # Validate data
+            required_vars = [
+                'Temperature_surface',
+                'Pressure_surface',
+                'Geopotential_height_surface',
+                'u-component_of_wind_height_above_ground',
+                'v-component_of_wind_height_above_ground'
+            ]
+            for var in required_vars:
+                if var not in ds.variables:
+                    raise ValueError(f"Missing required variable: {var}")
+                if ds[var].isnull().all():
+                    raise ValueError(f"Variable {var} contains only NaN values")
+
+            ds.to_netcdf(output_path, mode='w')
+            logging.info(f"Successfully downloaded and saved GFS data to {output_path}")
+            return True
+        except Exception as e:
+            logging.error(f"Attempt {attempt} failed: Error downloading GFS data: {e}")
+            if attempt < max_retries:
+                logging.debug(f"Retrying after {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logging.error(f"Max retries ({max_retries}) reached. Download failed.")
+                return False
+
 def get_gfs_surface_data():
     """Fetches GFS surface data including temperature, surface pressure, elevation, and 10m wind components."""
     now = datetime.utcnow()
@@ -155,32 +261,34 @@ def get_gfs_surface_data():
 
     logging.debug(f"Selected GFS run time for surface data: {run_date}")
 
-    catalog_url = 'https://thredds.ucar.edu/thredds/catalog/grib/NCEP/GFS/Global_0p25deg/catalog.xml'
-    cat = TDSCatalog(catalog_url)
-    latest_dataset = list(cat.datasets.values())[0]
-    ncss = latest_dataset.subset()
+    # Download latest GFS data
+    if not download_latest_gfs_data():
+        logging.warning("Failed to download latest GFS data. Attempting to use existing local file.")
 
-    query = ncss.query()
-    query.accept('netcdf4')
-    query.time(run_date)
-    query.variables(
-        'Temperature_surface',
-        'Pressure_surface',  # Surface pressure for MSLP calculation
-        'Geopotential_height_surface',  # Elevation for MSLP calculation
-        'u-component_of_wind_height_above_ground',
-        'v-component_of_wind_height_above_ground'
-    )
-    query.lonlat_box(north=71, south=35, east=45, west=-25)  # North America
-
+    # Try loading local file
     try:
-        data = ncss.get_data(query)
-        ds = xr.open_dataset(xr.backends.NetCDF4DataStore(data))
+        ds = xr.open_dataset('/media/evanl/BACKUP/bot/gfs_data_eu.nc')
         ds = ds.metpy.parse_cf()
-        logging.debug(f"Available surface variables: {list(ds.variables)}")
-        logging.debug(f"Dataset dimensions: {ds.dims}")
+        logging.debug(f"Loaded local GFS data: {list(ds.variables)}")
+        logging.debug(f"Local dataset dimensions: {ds.dims}")
+
+        # Validate required variables
+        required_vars = [
+            'Temperature_surface',
+            'Pressure_surface',
+            'Geopotential_height_surface',
+            'u-component_of_wind_height_above_ground',
+            'v-component_of_wind_height_above_ground'
+        ]
+        for var in required_vars:
+            if var not in ds.variables:
+                raise ValueError(f"Missing required variable: {var}")
+            if ds[var].isnull().all():
+                raise ValueError(f"Variable {var} contains only NaN values")
+
         return ds, run_date
     except Exception as e:
-        logging.error(f"Error fetching surface data: {e}")
+        logging.error(f"Failed to load local GFS data: {e}")
         return None, None
 
 def plot_background(ax):
@@ -260,8 +368,7 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
         cb.set_label(cb_label, size='large')
 
         plot_background(ax)
-
-        logo_paths = ["/home/evanl/Documents/uga_logo.png", "/home/evanl/Documents/boxlogo2.png"]
+        logo_paths = ["/media/evanl/BACKUP/bot/metoc.png", "/media/evanl/BACKUP/bot/boxlogo2.png"]
         add_logos_to_figure(fig, logo_paths, logo_size=1.0, logo_pad=0.2)
 
         plt.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.05)
@@ -281,7 +388,7 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
         return None
 
 def generate_mslp_temp_map():
-    """Generate a Mean Sea Level Pressure (MSLP) chart with temperature gradient and meteorological features using MSLET."""
+    """Generate a Mean Sea Level Pressure (MSLP) chart with temperature gradient and meteorological features."""
     try:
         ds, run_date = get_gfs_surface_data()
         if ds is None:
@@ -296,69 +403,76 @@ def generate_mslp_temp_map():
         lat = lat.values
         lon_2d, lat_2d = np.meshgrid(lon, lat)
 
-        # Debug: Log available height levels
+        # Debug: Log dataset details
+        logging.debug(f"Dataset dimensions: {ds.dims}")
+        logging.debug(f"Available variables: {list(ds.variables)}")
         logging.debug(f"Available height levels: {ds['height_above_ground2'].values}")
 
-        # Select temperature data using reftime and validtime2
-        temp_surface = ds['Temperature_surface'].isel(reftime=0, validtime2=0).metpy.convert_units('degC').metpy.dequantify()
+        # Dynamically select time dimension
+        time_dims = get_time_dimension(ds, run_date)
+
+        # Select temperature data
+        temp_surface = ds['Temperature_surface'].isel(time_dims).metpy.convert_units('degC').metpy.dequantify()
+        temp_surface = temp_surface.squeeze()  # Remove any singleton dimensions
+        logging.debug(f"temp_surface shape: {temp_surface.shape}, NaN count: {np.isnan(temp_surface).sum()}")
         if temp_surface.ndim != 2:
             raise ValueError(f"Temperature data is not 2D, has shape {temp_surface.shape}")
+        if np.isnan(temp_surface).all():
+            raise ValueError("Temperature data contains only NaN values")
 
-        # Select surface pressure data using reftime and validtime2 (in Pa)
-        surface_pressure = ds['Pressure_surface'].isel(reftime=0, validtime2=0).metpy.dequantify()
+        # Select surface pressure data (in Pa)
+        surface_pressure = ds['Pressure_surface'].isel(time_dims).metpy.dequantify()
+        surface_pressure = surface_pressure.squeeze()
+        logging.debug(f"surface_pressure shape: {surface_pressure.shape}, NaN count: {np.isnan(surface_pressure).sum()}")
         if surface_pressure.ndim != 2:
             raise ValueError(f"Surface pressure data is not 2D, has shape {surface_pressure.shape}")
+        if np.isnan(surface_pressure).all():
+            raise ValueError("Surface pressure data contains only NaN values")
 
         # Get elevation
-        try:
-            elevation = ds['Geopotential_height_surface'].isel(reftime=0, validtime2=0).metpy.dequantify()
-            if elevation.ndim != 2:
-                raise ValueError(f"Elevation data is not 2D, has shape {elevation.shape}")
-        except KeyError as e:
-            logging.error(f"Elevation data not found: {e}")
-            raise ValueError("Elevation data is required for MSLP calculation.")
+        elevation = ds['Geopotential_height_surface'].isel(time_dims).metpy.dequantify()
+        elevation = elevation.squeeze()
+        logging.debug(f"elevation shape: {elevation.shape}, NaN count: {np.isnan(elevation).sum()}")
+        if elevation.ndim != 2:
+            raise ValueError(f"Elevation data is not 2D, has shape {elevation.shape}")
+        if np.isnan(elevation).all():
+            raise ValueError("Elevation data contains only NaN values")
 
-        # Calculate MSLP manually using the hypsometric equation
-        try:
-            # Constants
-            g = 9.80665  # m/s^2
-            Rd = 287.05  # J/(kg·K)
-
-            # Convert temperature to Kelvin
-            temp_kelvin = temp_surface + 273.15  # Assuming surface temp as MSLET proxy
-
-            # Hypsometric equation: P_mslp = P_surface * exp(g * h / (Rd * T))
-            mslp = surface_pressure * np.exp((g * elevation) / (Rd * temp_kelvin))
-
-            # Convert to hPa
-            mslp = mslp / 100
-        except Exception as e:
-            logging.error(f"Error calculating MSLP: {e}")
-            raise ValueError("Failed to calculate MSLP.")
+        # Calculate MSLP using hypsometric equation
+        g = 9.80665  # m/s^2
+        Rd = 287.05  # J/(kg·K)
+        temp_kelvin = temp_surface + 273.15
+        mslp = surface_pressure * np.exp((g * elevation) / (Rd * temp_kelvin))
+        mslp = mslp / 100  # Convert to hPa
+        logging.debug(f"mslp shape: {mslp.shape}, NaN count: {np.isnan(mslp).sum()}")
+        if np.isnan(mslp).all():
+            raise ValueError("MSLP data contains only NaN values")
 
         # Validate and smooth MSLP
         mslp = np.where((mslp >= 850) & (mslp <= 1100), mslp, np.nan)
         mslp_smooth = ndimage.gaussian_filter(mslp, sigma=3, order=0)
+        logging.debug(f"mslp_smooth shape: {mslp_smooth.shape}, NaN count: {np.isnan(mslp_smooth).sum()}")
 
-        # Select wind components at 10 meters height
-        u_wind_da = ds['u-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime2=0).squeeze()
-        v_wind_da = ds['v-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(reftime=0, validtime2=0).squeeze()
-
-        # Debug: Log selected height and shapes
-        selected_height = ds['height_above_ground2'].sel(height_above_ground2=10, method='nearest').values
-        logging.debug(f"Selected height for wind: {selected_height}")
-        logging.debug(f"u_wind shape: {u_wind_da.shape}")
-        logging.debug(f"v_wind shape: {v_wind_da.shape}")
+        # Select wind components at 10 meters
+        u_wind_da = ds['u-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(time_dims).squeeze()
+        v_wind_da = ds['v-component_of_wind_height_above_ground'].sel(height_above_ground2=10, method='nearest').isel(time_dims).squeeze()
+        logging.debug(f"Selected height for wind: {ds['height_above_ground2'].sel(height_above_ground2=10, method='nearest').values}")
+        logging.debug(f"u_wind shape: {u_wind_da.shape}, NaN count: {np.isnan(u_wind_da).sum()}")
+        logging.debug(f"v_wind shape: {v_wind_da.shape}, NaN count: {np.isnan(v_wind_da).sum()}")
 
         u_wind = u_wind_da.values
         v_wind = v_wind_da.values
+        if np.isnan(u_wind).all() or np.isnan(v_wind).all():
+            raise ValueError("Wind data contains only NaN values")
 
         # Compute temperature gradients for front detection
         temp_grad_x, temp_grad_y = np.gradient(temp_surface, lon[1] - lon[0], lat[1] - lat[0])
         temp_grad_mag = np.sqrt(temp_grad_x**2 + temp_grad_y**2)
+        logging.debug(f"temp_grad_mag shape: {temp_grad_mag.shape}, NaN count: {np.isnan(temp_grad_mag).sum()}")
 
         # Frontogenesis (simplified as temperature gradient convergence)
         frontogenesis = compute_advection(temp_grad_mag, u_wind, v_wind, lat, lon)
+        logging.debug(f"frontogenesis shape: {frontogenesis.shape}, NaN count: {np.isnan(frontogenesis).sum()}")
 
         # Identify pressure centers
         mslp_grad_x, mslp_grad_y = np.gradient(mslp_smooth, lon[1] - lon[0], lat[1] - lat[0])
@@ -379,6 +493,7 @@ def generate_mslp_temp_map():
             levels=np.linspace(np.nanmin(temp_surface), np.nanmax(temp_surface), 41),
             cmap='jet', transform=crs
         )
+        logging.debug(f"Temperature contourf plotted with min: {np.nanmin(temp_surface)}, max: {np.nanmax(temp_surface)}")
 
         # MSLP contours with 2 hPa intervals
         mslp_min = np.floor(np.nanmin(mslp) / 2) * 2
@@ -386,8 +501,9 @@ def generate_mslp_temp_map():
         isobar_levels = np.arange(mslp_min, mslp_max + 2, 2)
         c = ax.contour(lon_2d, lat_2d, mslp_smooth, levels=isobar_levels, colors='black', linewidths=2, transform=crs)
         ax.clabel(c, fmt='%d hPa', inline=True, fontsize=5)
+        logging.debug(f"MSLP contours plotted with levels: {isobar_levels}")
 
-        # Convert wind components to knots for barbs (m/s to knots: * 1.94384)
+        # Convert wind components to knots for barbs
         u_wind_knots = u_wind * 1.94384
         v_wind_knots = v_wind * 1.94384
         ax.barbs(
@@ -395,13 +511,15 @@ def generate_mslp_temp_map():
             u_wind_knots[::5, ::5], v_wind_knots[::5, ::5],
             transform=crs, length=6, color='black'
         )
+        logging.debug("Wind barbs plotted")
 
         # Dry lines (simplified using temperature gradient as proxy)
         dry_line_mask = (temp_grad_mag > np.percentile(temp_grad_mag, 90)) & (frontogenesis > -0.005) & (frontogenesis < 0.005)
         ax.contour(lon_2d, lat_2d, dry_line_mask, levels=[0.5], colors='brown', linestyles='-.', linewidths=1, transform=crs)
+        logging.debug("Dry lines plotted")
 
         # Titles and labels
-        main_title = f"European: MSLP with Temperature Gradient (°C) and Features"
+        main_title = f"Europe: MSLP with Temperature Gradient (°C) and Features"
         ax.set_title(main_title, fontsize=16)
         fig.suptitle(run_date.strftime('%d %B %Y %H:%MZ'), fontsize=12, y=1.02)
         cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03)
