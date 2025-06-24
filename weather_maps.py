@@ -300,6 +300,13 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
             data = compute_dewpoint(temp, rh)
         elif variable == 'divergence':
             data = compute_divergence(u_wind, v_wind, lat, lon) * 1e5
+        elif variable == 'frontogenesis':
+            if level != 70000:
+                raise ValueError("Frontogenesis is only computed at 700 hPa.")
+            temp = ds['Temperature_isobaric'].sel(isobaric=level, method='nearest').squeeze().values.copy()
+            data = frontogenesis_700hPa(temp, u_wind, v_wind, lat, lon)
+            if data is None:
+                raise ValueError("Failed to compute frontogenesis.")
         else:
             raise ValueError(f"Unsupported variable type: {variable}")
 
@@ -315,18 +322,18 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
         c = ax.contour(lon_2d, lat_2d, heights_smooth, colors='black', linewidths=2, transform=crs)
         ax.clabel(c, fontsize=8, inline=1, fmt='%i')
 
-        # Convert wind components to knots for barbs (m/s to knots: * 1.94384)
         u_wind_knots = u_wind * 1.94384
         v_wind_knots = v_wind * 1.94384
         ax.barbs(lon_2d[::5, ::5], lat_2d[::5, ::5], u_wind_knots[::5, ::5], v_wind_knots[::5, ::5], transform=crs, length=6)
 
         ax.set_title(f"{title} {run_date.strftime('%d %B %Y %H:%MZ')}", fontsize=16)
-        cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03)
+        cb = fig.colorbar(cf, ax=ax, orientation='horizontal', shrink=1.0, pad=0.03, extend='both')
         cb.set_label(cb_label, size='large')
 
         plot_background(ax)
+        add_cities(ax)
 
-        logo_paths = ["/home/evanl/Documents/uga_logo.png", "/home/evanl/Documents/boxlogo2.png"]
+        logo_paths = ["/media/evanl/BACKUP/bot/metoc.png", "/media/evanl/BACKUP/bot/boxlogo2.png"]
         add_logos_to_figure(fig, logo_paths, logo_size=1.0, logo_pad=0.2)
 
         plt.subplots_adjust(left=0.01, right=0.99, top=0.90, bottom=0.05)
@@ -608,6 +615,34 @@ async def rh700(ctx):
     except Exception as e:
         logging.error(f"Error generating 700 hPa relative humidity map: {e}")
         await ctx.send(f'An unexpected error occurred while generating the 700 hPa relative humidity map: {e}')
+    finally:
+        if image_bytes:
+            image_bytes.close()
+
+@bot.command()
+async def fronto700(ctx):
+    await ctx.send('Generating 700 hPa frontogenesis map, please wait...')
+    loop = asyncio.get_event_loop()
+    image_bytes = None
+    try:
+        logging.info("Fetching data for 700 hPa frontogenesis map")
+        ds, run_date = await loop.run_in_executor(None, lambda: get_gfs_data_for_level(70000))
+        if ds is None:
+            await ctx.send('Failed to retrieve data for the 700 hPa frontogenesis map.')
+            return
+        image_bytes = await loop.run_in_executor(None, lambda: generate_map(
+            ds, run_date, 70000, 'frontogenesis', 'RdBu_r', '700-hPa Frontogenesis and Heights',
+            'Frontogenesis (K/100km/3hr)', levels=np.linspace(-10, 10, 41)
+        ))
+        if image_bytes is None:
+            await ctx.send('Failed to generate the 700 hPa frontogenesis map due to missing or invalid data.')
+            return
+        filename = f'fronto700_{run_date.strftime("%HZ")}.png'
+        await ctx.send(file=discord.File(fp=image_bytes, filename=filename))
+        logging.info("Successfully generated and sent 700 hPa frontogenesis map")
+    except Exception as e:
+        logging.error(f"Error generating 700 hPa frontogenesis map: {e}")
+        await ctx.send(f'An unexpected error occurred while generating the 700 hPa frontogenesis map: {e}')
     finally:
         if image_bytes:
             image_bytes.close()
