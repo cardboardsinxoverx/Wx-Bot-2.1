@@ -299,7 +299,7 @@ def generate_map(ds, run_date, level, variable, cmap, title, cb_label, levels=No
             rh = ds['Relative_humidity_isobaric'].sel(isobaric=level, method='nearest').squeeze().values.copy()
             data = compute_dewpoint(temp, rh)
         elif variable == 'divergence':
-            data = compute_divergence(u_wind, v_wind, lat, lon)
+            data = compute_divergence(u_wind, v_wind, lat, lon) * 1e5
         else:
             raise ValueError(f"Unsupported variable type: {variable}")
 
@@ -755,7 +755,7 @@ async def divcon300(ctx):
             return
         image_bytes = await loop.run_in_executor(None, lambda: generate_map(
             ds, run_date, 30000, 'divergence', 'RdBu_r',
-            '300-hPa Divergence/Convergence', 'Divergence (10^5 s^-1)'
+            '300-hPa Divergence/Convergence', r'Divergence ($10^{-5}$ s$^{-1}$)'
         ))
         if image_bytes is None:
             await ctx.send('Failed to generate the 300 hPa divergence/convergence map due to missing or invalid data.')
